@@ -38,6 +38,7 @@ type InspectDTO struct {
 	Source            string      `json:"source,omitempty"`
 	OwnerKey          string      `json:"owner_key,omitempty"`
 	DockerContainerID string      `json:"docker_container_id,omitempty"`
+	Hostname          string      `json:"hostname,omitempty"`
 }
 
 // ListResponse wraps a service list.
@@ -64,6 +65,7 @@ type RegisterRequest struct {
 	OwnerKey          string     `json:"owner_key,omitempty"`
 	RegistrationID    string     `json:"registration_id,omitempty"`
 	DockerContainerID string     `json:"docker_container_id,omitempty"`
+	HTTPHost          string     `json:"http_host,omitempty"`
 }
 
 // RegisterResponse is the POST /v1/registrations response.
@@ -104,6 +106,7 @@ func inspectDTO(info daemon.ServiceInfo) InspectDTO {
 		Source:            string(info.Source),
 		OwnerKey:          info.OwnerKey,
 		DockerContainerID: info.DockerContainerID,
+		Hostname:          info.Hostname,
 	}
 	if info.Backend != nil {
 		dto.Backend = &BackendDTO{Host: info.Backend.Host, Port: info.Backend.Port}

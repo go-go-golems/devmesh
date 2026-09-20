@@ -78,6 +78,7 @@ type ServiceRecord struct {
 	Source            Source
 	Backend           *Backend
 	Frontend          Frontend
+	Hostname          string // HTTP kind only
 	Status            Status
 	DockerContainerID string
 	UpdatedAt         time.Time

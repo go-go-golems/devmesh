@@ -2,6 +2,7 @@ package integration
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"log/slog"
 	"net"
@@ -18,9 +19,10 @@ import (
 )
 
 type harness struct {
-	d      *daemon.Daemon
-	client *transport.Client
-	socket string
+	d        *daemon.Daemon
+	client   *transport.Client
+	socket   string
+	httpAddr string
 }
 
 func freeBase(t *testing.T) int {
@@ -34,10 +36,18 @@ func freeBase(t *testing.T) int {
 }
 
 func startHarness(t *testing.T, leaseTTL time.Duration) *harness {
-	return startHarnessWithDocker(t, leaseTTL, false)
+	return startHarnessOpts(t, leaseTTL, false, false)
 }
 
 func startHarnessWithDocker(t *testing.T, leaseTTL time.Duration, dockerEnabled bool) *harness {
+	return startHarnessOpts(t, leaseTTL, dockerEnabled, false)
+}
+
+func startHarnessHTTP(t *testing.T, leaseTTL time.Duration) *harness {
+	return startHarnessOpts(t, leaseTTL, false, true)
+}
+
+func startHarnessOpts(t *testing.T, leaseTTL time.Duration, dockerEnabled, httpEnabled bool) *harness {
 	t.Helper()
 	dir := t.TempDir()
 	socket := filepath.Join(dir, "devmesh.sock")
@@ -50,6 +60,12 @@ func startHarnessWithDocker(t *testing.T, leaseTTL time.Duration, dockerEnabled 
 	cfg.TCPFrontendMax = base + 40
 	cfg.LeaseTTL = leaseTTL
 	cfg.Docker.Enabled = dockerEnabled
+	httpAddr := ""
+	if httpEnabled {
+		cfg.HTTP.Enabled = true
+		cfg.HTTP.HTTPAddr = net.JoinHostPort("127.0.0.1", fmt.Sprintf("%d", freeBase(t)))
+		httpAddr = cfg.HTTP.HTTPAddr
+	}
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	d, err := daemon.New(cfg, logger)
@@ -73,7 +89,7 @@ func startHarnessWithDocker(t *testing.T, leaseTTL time.Duration, dockerEnabled 
 		transport.RemoveSocket(socket)
 	})
 
-	return &harness{d: d, client: transport.NewClient(socket, 3*time.Second), socket: socket}
+	return &harness{d: d, client: transport.NewClient(socket, 3*time.Second), socket: socket, httpAddr: httpAddr}
 }
 
 // prefixEcho starts a TCP server that replies "<prefix>:<payload>".

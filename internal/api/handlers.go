@@ -75,6 +75,7 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 		OwnerKey:          req.OwnerKey,
 		RegistrationID:    req.RegistrationID,
 		DockerContainerID: req.DockerContainerID,
+		HTTPHost:          req.HTTPHost,
 	})
 	if err != nil {
 		writeError(w, s.logger, err)

@@ -8,7 +8,9 @@ import (
 	"errors"
 	"log/slog"
 	"net"
+	"net/http"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -16,6 +18,7 @@ import (
 	"github.com/wesen/devmesh/internal/config"
 	"github.com/wesen/devmesh/internal/dockerwatch"
 	"github.com/wesen/devmesh/internal/lease"
+	"github.com/wesen/devmesh/internal/proxy"
 	"github.com/wesen/devmesh/internal/registry"
 	"github.com/wesen/devmesh/internal/runtime"
 	"github.com/wesen/devmesh/internal/state"
@@ -33,6 +36,7 @@ type Daemon struct {
 	Runtime  *runtime.Manager
 	Lease    *lease.Manager
 	State    *state.Store
+	HTTP     *proxy.Router
 
 	mutate    sync.Mutex
 	startedAt time.Time
@@ -57,6 +61,7 @@ func New(cfg config.Config, logger *slog.Logger) (*Daemon, error) {
 		Registry:  registry.New(),
 		State:     st,
 		Lease:     lease.NewManager(cfg.LeaseTTL),
+		HTTP:      proxy.NewRouter("http", logger),
 		startedAt: time.Now(),
 	}
 	alloc := runtime.NewAllocator(cfg.TCPFrontendHost, cfg.TCPFrontendMin, cfg.TCPFrontendMax, st, logger)
@@ -112,6 +117,23 @@ func (d *Daemon) Start(ctx context.Context) {
 		}
 	}()
 
+	if d.cfg.HTTP.Enabled {
+		d.wg.Add(1)
+		go func() {
+			defer d.wg.Done()
+			srv := &http.Server{Addr: d.cfg.HTTP.HTTPAddr, Handler: d.HTTP}
+			go func() {
+				<-ctx.Done()
+				sctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+				defer cancel()
+				_ = srv.Shutdown(sctx)
+			}()
+			if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+				d.logger.Warn("http_proxy_listen_failed", "addr", d.cfg.HTTP.HTTPAddr, "error", err)
+			}
+		}()
+	}
+
 	d.logger.Info("daemon_started", "version", Version, "state", d.cfg.StatePath)
 
 	d.StartDockerWatcher(ctx)
@@ -142,6 +164,7 @@ func (d *Daemon) StartDockerWatcher(ctx context.Context) {
 				Source:            registry.SourceDocker,
 				OwnerKey:          reg.OwnerKey,
 				DockerContainerID: reg.ContainerID,
+				HTTPHost:          reg.HTTPHost,
 			})
 			return rerr
 		},
@@ -204,6 +227,7 @@ type RegisterParams struct {
 	OwnerKey          string
 	RegistrationID    string
 	DockerContainerID string
+	HTTPHost          string
 }
 
 // RegisterResult is returned to a producer after registration.
@@ -215,11 +239,15 @@ type RegisterResult struct {
 	ExpiresAt      *time.Time
 }
 
-// Register validates and applies a backend, allocating the frontend if needed.
+// Register validates and applies a backend, allocating a TCP frontend or an
+// HTTP hostname route as appropriate.
 func (d *Daemon) Register(p RegisterParams) (RegisterResult, error) {
 	d.mutate.Lock()
 	defer d.mutate.Unlock()
+	return d.registerLocked(p)
+}
 
+func (d *Daemon) registerLocked(p RegisterParams) (RegisterResult, error) {
 	if err := registry.ValidateName(p.Name); err != nil {
 		return RegisterResult{}, errf(CodeInvalidName, "%s", err)
 	}
@@ -227,8 +255,8 @@ func (d *Daemon) Register(p RegisterParams) (RegisterResult, error) {
 	if kind == "" {
 		kind = registry.KindTCP
 	}
-	if kind != registry.KindTCP {
-		return RegisterResult{}, errf(CodeUnsupportedKind, "kind %q is not implemented in the TCP MVP", kind)
+	if kind != registry.KindTCP && kind != registry.KindHTTP {
+		return RegisterResult{}, errf(CodeUnsupportedKind, "kind %q is not supported", kind)
 	}
 	if err := registry.ValidateBackend(p.Backend); err != nil {
 		return RegisterResult{}, errf(CodeInvalidBackend, "%s", err)
@@ -249,14 +277,7 @@ func (d *Daemon) Register(p RegisterParams) (RegisterResult, error) {
 		return RegisterResult{}, errf(CodeNameConflict, "%s", err)
 	}
 
-	rt, err := d.Runtime.EnsureTCPRuntime(p.Name, p.PreferredPort)
-	if err != nil {
-		var exhausted *runtime.ErrPortExhausted
-		if errors.As(err, &exhausted) {
-			return RegisterResult{}, errf(CodePortExhausted, "%s", err)
-		}
-		return RegisterResult{}, errf(CodeInternal, "allocate frontend: %s", err)
-	}
+	res := RegisterResult{RegistrationID: regID, Name: p.Name}
 
 	rec := registry.ServiceRecord{
 		Name:              p.Name,
@@ -265,25 +286,51 @@ func (d *Daemon) Register(p RegisterParams) (RegisterResult, error) {
 		OwnerKey:          ownerKey,
 		Source:            source,
 		Backend:           &p.Backend,
-		Frontend:          rt.Frontend,
 		Status:            registry.StatusReady,
 		DockerContainerID: p.DockerContainerID,
 		UpdatedAt:         time.Now(),
 	}
+
+	if kind == registry.KindHTTP {
+		hostname := strings.ToLower(strings.TrimSpace(p.HTTPHost))
+		if hostname == "" {
+			return RegisterResult{}, errf(CodeInvalidRequest, "http_host is required for kind=http")
+		}
+		rec.Hostname = hostname
+		rec.Frontend = registry.Frontend{URL: d.HTTP.FrontendURL(hostname)}
+	} else {
+		rt, err := d.Runtime.EnsureTCPRuntime(p.Name, p.PreferredPort)
+		if err != nil {
+			var exhausted *runtime.ErrPortExhausted
+			if errors.As(err, &exhausted) {
+				return RegisterResult{}, errf(CodePortExhausted, "%s", err)
+			}
+			return RegisterResult{}, errf(CodeInternal, "allocate frontend: %s", err)
+		}
+		rec.Frontend = rt.Frontend
+	}
+
 	if _, err := d.Registry.CreateOrReplaceOwned(rec); err != nil {
 		return RegisterResult{}, errf(CodeNameConflict, "%s", err)
 	}
-	d.Runtime.SetBackend(p.Name, p.Backend)
 
-	res := RegisterResult{
-		RegistrationID: regID,
-		Name:           p.Name,
-		Frontend:       rt.Frontend,
+	if kind == registry.KindHTTP {
+		name := p.Name
+		d.HTTP.Set(rec.Hostname, func() *registry.Backend {
+			r, ok := d.Registry.Resolve(name)
+			if !ok || r.Status != registry.StatusReady {
+				return nil
+			}
+			return r.Backend
+		})
+	} else {
+		d.Runtime.SetBackend(p.Name, p.Backend)
 	}
+	res.Frontend = rec.Frontend
 
 	// Docker registrations are driven by container lifecycle, not leases.
 	if source == registry.SourceDocker {
-		d.logger.Info("service_registered", "service", p.Name, "source", source, "backend", p.Backend.Addr(), "frontend", rt.Frontend.Addr())
+		d.logger.Info("service_registered", "service", p.Name, "source", source, "backend", p.Backend.Addr(), "frontend", frontendLabel(rec.Frontend))
 		return res, nil
 	}
 
@@ -299,8 +346,15 @@ func (d *Daemon) Register(p RegisterParams) (RegisterResult, error) {
 	res.LeaseToken = token
 	res.ExpiresAt = &entry.ExpiresAt
 
-	d.logger.Info("service_registered", "service", p.Name, "source", source, "backend", p.Backend.Addr(), "frontend", rt.Frontend.Addr())
+	d.logger.Info("service_registered", "service", p.Name, "source", source, "backend", p.Backend.Addr(), "frontend", frontendLabel(rec.Frontend))
 	return res, nil
+}
+
+func frontendLabel(f registry.Frontend) string {
+	if f.URL != "" {
+		return f.URL
+	}
+	return f.Addr()
 }
 
 // Heartbeat renews a leased registration, returning the new expiry.
@@ -357,6 +411,7 @@ type ServiceInfo struct {
 	Source            registry.Source
 	OwnerKey          string
 	DockerContainerID string
+	Hostname          string
 }
 
 func infoFromRecord(rec registry.ServiceRecord, includeBackend bool) ServiceInfo {
@@ -369,6 +424,7 @@ func infoFromRecord(rec registry.ServiceRecord, includeBackend bool) ServiceInfo
 		Source:            rec.Source,
 		OwnerKey:          rec.OwnerKey,
 		DockerContainerID: rec.DockerContainerID,
+		Hostname:          rec.Hostname,
 	}
 	if includeBackend && rec.Backend != nil {
 		b := *rec.Backend

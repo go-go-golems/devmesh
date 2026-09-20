@@ -502,3 +502,30 @@ can also come from the environment, without reintroducing `os.Getenv`.
 
 ### Technical details
 - Commit `d11d319` — ":mag: Pre-parse DEVMESH_CONFIG so the config path can come from env".
+
+## Step 11: Mirror the published vault report into the ticket
+
+After publishing the deep-dive project report to the go-go-parc Obsidian vault,
+I mirrored it into the ticket so the devmesh repository is self-contained and the
+report can be reviewed alongside the implementation it describes.
+
+### Prompt Context
+**User prompt (verbatim):** "mirror the report. commit."
+**Assistant interpretation:** Copy the vault report byte-for-byte into the ticket, record provenance, and commit.
+**Inferred user intent:** Keep the ticket self-contained without maintaining a second editable copy.
+
+### What I did
+- Copied the vault note to `various/vault-project-report--devmesh-deep-dive.md`.
+- Verified byte identity: both files are 51,197 bytes with SHA-256 `7f0d80ab7e3a6a98f25189fbdb40c2b26bcdefdcb5fe7b5845be48feecb8d3f5`.
+- Recorded the vault path, vault commit `d85a07c`, size, hash, and a verification command in the reference provenance doc, and related the mirror file.
+- Added a changelog entry.
+
+### What worked
+- `docmgr doctor --ticket DEVMESH-001` reports all checks passed.
+
+### What didn't work
+- No failures observed. The mirror is read-only by convention; the vault note remains the editable source.
+
+### Technical details
+- Vault source: `/home/manuel/code/wesen/go-go-golems/go-go-parc/Projects/2026/09/20/PROJECT REPORT - Devmesh - Stable Local Endpoints for Ephemeral Backends - A Technical Deep Dive.md`.
+- Mirror: `.../DEVMESH-001--devmesh-implementation-and-intern-analysis-guide/various/vault-project-report--devmesh-deep-dive.md`.

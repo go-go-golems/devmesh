@@ -47,3 +47,11 @@ Added a Glazed-based pre-parse so the daemon config-file path can come from DEVM
 ### Related Files
 
 - /home/manuel/code/wesen/2026-09-20--devmesh/cmd/devmeshd/cmds/serve.go — resolveConfigPath pre-parse
+
+## 2026-09-20
+
+Mirrored the published go-go-parc Obsidian vault project report (commit d85a07c, sha256 7f0d80ab...) into the ticket's various/ directory and recorded its provenance in the reference inventory.
+
+### Related Files
+
+- /home/manuel/code/wesen/2026-09-20--devmesh/ttmp/2026/09/20/DEVMESH-001--devmesh-implementation-and-intern-analysis-guide/various/vault-project-report--devmesh-deep-dive.md — Byte-identical mirror of the vault report

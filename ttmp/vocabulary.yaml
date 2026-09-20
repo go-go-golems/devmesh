@@ -5,6 +5,20 @@ topics:
       description: Backend services
     - slug: websocket
       description: WebSocket lifecycle & events
+    - slug: devmesh
+      description: 'Devmesh topic: devmesh'
+    - slug: architecture
+      description: 'Devmesh topic: architecture'
+    - slug: go
+      description: 'Devmesh topic: go'
+    - slug: docker
+      description: 'Devmesh topic: docker'
+    - slug: proxy
+      description: 'Devmesh topic: proxy'
+    - slug: tcp-http
+      description: 'Devmesh topic: tcp-http'
+    - slug: registry
+      description: 'Devmesh topic: registry'
 docTypes:
     - slug: design-doc
       description: Structured rationale and architecture notes
@@ -16,6 +30,10 @@ docTypes:
       description: Ticket landing page
     - slug: skill
       description: Skill documentation (what it's for and when to use it)
+    - slug: analysis
+      description: 'Doc type: analysis'
+    - slug: diary
+      description: 'Doc type: diary'
 intent:
     - slug: long-term
       description: Likely to persist

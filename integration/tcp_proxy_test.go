@@ -19,10 +19,11 @@ import (
 )
 
 type harness struct {
-	d        *daemon.Daemon
-	client   *transport.Client
-	socket   string
-	httpAddr string
+	d         *daemon.Daemon
+	client    *transport.Client
+	socket    string
+	httpAddr  string
+	httpsAddr string
 }
 
 func freeBase(t *testing.T) int {
@@ -36,18 +37,22 @@ func freeBase(t *testing.T) int {
 }
 
 func startHarness(t *testing.T, leaseTTL time.Duration) *harness {
-	return startHarnessOpts(t, leaseTTL, false, false)
+	return startHarnessOpts(t, leaseTTL, false, false, "", "")
 }
 
 func startHarnessWithDocker(t *testing.T, leaseTTL time.Duration, dockerEnabled bool) *harness {
-	return startHarnessOpts(t, leaseTTL, dockerEnabled, false)
+	return startHarnessOpts(t, leaseTTL, dockerEnabled, false, "", "")
 }
 
 func startHarnessHTTP(t *testing.T, leaseTTL time.Duration) *harness {
-	return startHarnessOpts(t, leaseTTL, false, true)
+	return startHarnessOpts(t, leaseTTL, false, true, "", "")
 }
 
-func startHarnessOpts(t *testing.T, leaseTTL time.Duration, dockerEnabled, httpEnabled bool) *harness {
+func startHarnessTLS(t *testing.T, leaseTTL time.Duration, certFile, keyFile string) *harness {
+	return startHarnessOpts(t, leaseTTL, false, true, certFile, keyFile)
+}
+
+func startHarnessOpts(t *testing.T, leaseTTL time.Duration, dockerEnabled, httpEnabled bool, certFile, keyFile string) *harness {
 	t.Helper()
 	dir := t.TempDir()
 	socket := filepath.Join(dir, "devmesh.sock")
@@ -61,11 +66,16 @@ func startHarnessOpts(t *testing.T, leaseTTL time.Duration, dockerEnabled, httpE
 	cfg.LeaseTTL = leaseTTL
 	cfg.Docker.Enabled = dockerEnabled
 	httpAddr := ""
+	httpsAddr := ""
 	if httpEnabled {
 		cfg.HTTP.Enabled = true
 		cfg.HTTP.HTTPAddr = net.JoinHostPort("127.0.0.1", fmt.Sprintf("%d", freeBase(t)))
+		cfg.HTTP.HTTPSAddr = net.JoinHostPort("127.0.0.1", fmt.Sprintf("%d", freeBase(t)))
 		httpAddr = cfg.HTTP.HTTPAddr
+		httpsAddr = cfg.HTTP.HTTPSAddr
 	}
+	cfg.HTTP.CertFile = certFile
+	cfg.HTTP.KeyFile = keyFile
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	d, err := daemon.New(cfg, logger)
@@ -89,7 +99,7 @@ func startHarnessOpts(t *testing.T, leaseTTL time.Duration, dockerEnabled, httpE
 		transport.RemoveSocket(socket)
 	})
 
-	return &harness{d: d, client: transport.NewClient(socket, 3*time.Second), socket: socket, httpAddr: httpAddr}
+	return &harness{d: d, client: transport.NewClient(socket, 3*time.Second), socket: socket, httpAddr: httpAddr, httpsAddr: httpsAddr}
 }
 
 // prefixEcho starts a TCP server that replies "<prefix>:<payload>".

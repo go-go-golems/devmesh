@@ -5,7 +5,9 @@ package daemon
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net"
 	"net/http"
@@ -44,6 +46,7 @@ type Daemon struct {
 	dockerStatus atomic.Value // string
 	cancel       context.CancelFunc
 	wg           sync.WaitGroup
+	tlsCert      *tls.Certificate
 }
 
 // New builds a daemon from config. It loads persistent state.
@@ -70,8 +73,33 @@ func New(cfg config.Config, logger *slog.Logger) (*Daemon, error) {
 	if cfg.Docker.Enabled {
 		d.dockerStatus.Store("degraded")
 	}
+	if err := d.loadTLS(); err != nil {
+		return nil, err
+	}
 	return d, nil
 }
+
+// loadTLS validates an existing PEM certificate/key pair at startup. Both
+// files must be present together; automatic ACME issuance is deliberately out
+// of scope.
+func (d *Daemon) loadTLS() error {
+	cfg := d.cfg.HTTP
+	if cfg.CertFile == "" && cfg.KeyFile == "" {
+		return nil
+	}
+	if cfg.CertFile == "" || cfg.KeyFile == "" {
+		return fmt.Errorf("both http.cert_file and http.key_file are required for TLS")
+	}
+	cert, err := tls.LoadX509KeyPair(cfg.CertFile, cfg.KeyFile)
+	if err != nil {
+		return fmt.Errorf("load TLS certificate/key: %w", err)
+	}
+	d.tlsCert = &cert
+	return nil
+}
+
+// TLSCertificate returns the loaded certificate, or nil when TLS is disabled.
+func (d *Daemon) TLSCertificate() *tls.Certificate { return d.tlsCert }
 
 // Config returns the daemon configuration.
 func (d *Daemon) Config() config.Config { return d.cfg }
@@ -130,6 +158,30 @@ func (d *Daemon) Start(ctx context.Context) {
 			}()
 			if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 				d.logger.Warn("http_proxy_listen_failed", "addr", d.cfg.HTTP.HTTPAddr, "error", err)
+			}
+		}()
+	}
+
+	if d.tlsCert != nil {
+		d.wg.Add(1)
+		go func() {
+			defer d.wg.Done()
+			srv := &http.Server{
+				Addr:    d.cfg.HTTP.HTTPSAddr,
+				Handler: d.HTTP,
+				TLSConfig: &tls.Config{
+					Certificates: []tls.Certificate{*d.tlsCert},
+					MinVersion:   tls.VersionTLS12,
+				},
+			}
+			go func() {
+				<-ctx.Done()
+				sctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+				defer cancel()
+				_ = srv.Shutdown(sctx)
+			}()
+			if err := srv.ListenAndServeTLS("", ""); err != nil && !errors.Is(err, http.ErrServerClosed) {
+				d.logger.Warn("https_proxy_listen_failed", "addr", d.cfg.HTTP.HTTPSAddr, "error", err)
 			}
 		}()
 	}

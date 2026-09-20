@@ -6,3 +6,4 @@
 - [x] Define CLI and help system on the Glazed framework in the guide <!-- t:boae -->
 - [x] Relate source/docs and validate with docmgr doctor <!-- t:dtef -->
 - [x] Upload guide to reMarkable <!-- t:vjq7 -->
+- [x] Implement devmesh PR plan (TCP MVP, Docker, HTTP proxy, TLS) <!-- t:un7e -->

@@ -226,3 +226,175 @@ reMarkable upload remains pending.
 - Ticket: `ttmp/2026/09/20/DEVMESH-001--devmesh-implementation-and-intern-analysis-guide`.
 - Docs: `sources/devmesh-implementation-guide.md`, `design-doc/01-...md`,
   `reference/01-imported-source-inventory-and-provenance.md`, this diary.
+
+## Step 5: Implement the core TCP MVP (PR 1-3)
+
+After the documentation phase, work moved to implementation. The goal was a
+working TCP path end-to-end before touching Docker or HTTP: a native backend
+registers, devmesh allocates a stable frontend by binding it, a consumer
+connects through the frontend, and a lease expires if the producer dies.
+
+### Prompt Context
+**User prompt (verbatim):** "add + commit ticket. THen implement task by task, commit at appropriate intervals and keep a detailed diary as you work (using the diary format from the skill)"
+**Assistant interpretation:** Commit the ticket, then implement the intern guide's PR plan incrementally, committing at boundaries and writing diary entries.
+**Inferred user intent:** Turn the design document into a working, tested devmesh implementation with a reviewable history.
+
+### What I did
+- Created the Go module `github.com/wesen/devmesh` (Go 1.26.1 toolchain) and pinned Glazed v1.4.4.
+- Implemented `internal/registry` (domain model, `ValidateName`, `ValidateBackend`, `IsLoopbackHost`, ownership rules), `internal/config` (JSON + env + defaults), `internal/state` (atomic temp+rename persistence, corrupt recovery, future-version refusal), `internal/lease` (tokens, TTL, constant-time compare, expiry), `internal/runtime` (bind-first allocator returning `{Port, Listener}`, `ServiceRuntime` with `atomic.Pointer[Backend]`, manager, idle reaper), `internal/proxy` (bidirectional copy with `CloseWrite` half-close), `internal/daemon` (orchestration and stable API error codes), `internal/api` (`/v1` HTTP over Unix socket), and `internal/transport` (stale-safe socket listener + JSON client with bearer support).
+- Built the public client `pkg/devmesh` (`Register`, `ListenTCP`, heartbeat with 404 re-registration, best-effort `Close`).
+- Built the Glazed CLI (`cmd/devmesh`) and daemon (`cmd/devmeshd`), embedded help pages in `pkg/doc`, and added `Makefile` + `README.md` + `examples/native-go`.
+- Added unit tests (registry, allocator, lease, state) and integration tests (TCP round trip, lease lifecycle, backend replacement preserving frontend, unrelated-owner conflict, Go client heartbeat/liveness).
+
+### Why
+- The bind-first allocator is the load-bearing correctness decision; returning the open listener removes the allocation race.
+- Docker and HTTP phases depend on this core, so they were deferred until the TCP path was proven.
+
+### What worked
+- `go build ./...`, `go vet ./...`, `go test ./...`, and `go test -race ./...` all pass.
+- Manual smoke test: registered `test.echo` on a Python echo backend, resolved `127.0.0.1:25005`, and read back `ECHO:hello-devmesh` through the proxy.
+- Daemon restart reused the remembered frontend (`frontend_reused`), a second daemon refused to start, and a SIGKILL'd daemon's stale socket was recovered.
+- `devmesh services list --help` shows the `Daemon Connection` section once and exactly `format`/`output-fields`/`max-output-rows` under Structured output.
+- `devmesh help devmesh-overview` renders the embedded page.
+
+### What didn't work
+- `go mod tidy` initially failed because Glazed v1.4.4 requires `go >= 1.26.1`; the toolchain auto-upgraded to go1.26.8 and pinned `go 1.26.1` in `go.mod`.
+- Several first drafts had unused imports; fixed with `gofmt`/build iteration.
+- `TestAllocateExhausted` assumed two ephemeral ports formed a contiguous two-port range; they did not, so the range still had free ports. Fixed by testing a single already-occupied port as the whole range.
+- `glazed-lint` flagged `os.Getenv` in `internal/config` and `internal/transport`. These are legitimate documented domain-env reads, so I added `//glazedclilint:file-ignore <reason>` directives rather than removing the feature. `make glazed-lint` now passes.
+
+### What I learned
+- Glazed v1.4.4 auto-injects the structured-output section for `GlazeCommand`s, so commands must not add it manually.
+- `AddCommandsToRootCommand` builds all commands before mounting, which catches schema collisions early.
+- The public Go client's heartbeat must send the bearer token; the initial draft omitted it and was fixed before testing.
+
+### What was tricky to build
+- Lease lifecycle and ownership interact: after a lease expires or is deleted the registry keeps the record (so the frontend stays reserved), but the owner key changes on re-registration. I changed ownership conflict rules to allow takeover of a *dormant* (unavailable) name while still protecting a ready one.
+
+### What warrants a second pair of eyes
+- Whether a dormant-name takeover should also be gated on the idle grace period, rather than being immediately allowed.
+- The `sync.Mutex` serialization in `runtime.Manager` and `daemon.Daemon.mutate` is simple and correct but global; fine for local-dev scale, worth revisiting if registration throughput matters.
+
+### What should be done in the future
+- Docker watcher (PR 4), `devmesh doctor` Docker capability test + PostgreSQL example (PR 5), then HTTP proxy and TLS (PR 6-7).
+
+### Code review instructions
+- Start with `internal/runtime/allocator.go`, `internal/proxy/tcp.go`, `internal/daemon/daemon.go`, and `internal/registry/registry.go`.
+- Validate with: `go test -race ./...`, `make glazed-lint`, and the manual smoke commands in the README.
+
+### Technical details
+- Commit `97103c6` — ":sparkles: Implement devmesh TCP MVP: registry, bind-first port allocation, TCP proxy, leases, Go client, Glazed CLI".
+- Dependencies: `github.com/go-go-golems/glazed v1.4.4`, `github.com/spf13/cobra v1.10.2`.
+
+## Step 6: Docker watcher and PostgreSQL acceptance test (PR 4-5)
+
+With the TCP core proven, the next milestone was Docker: labeled containers
+should be discovered automatically, their ephemeral host-published ports mapped
+to stable frontends, and container recreation should change only the backend.
+This step also added a real `devmesh doctor` publication capability check and a
+pgx end-to-end PostgreSQL test.
+
+### Prompt Context
+**User prompt (verbatim):** see Step 5.
+**Assistant interpretation:** Continue the PR plan: implement the Docker adapter and diagnostics.
+**Inferred user intent:** Reach the guide's key acceptance behavior — two PostgreSQL projects without host-port 5432 conflicts.
+
+### What I did
+- Added `internal/dockerwatch`:
+  - `labels.go` — required/optional label parsing and a recreation-stable owner key (Compose project/service, else container name; never container ID).
+  - `inspect.go` — `NetworkSettings.Ports` lookup, loopback preference, `ErrNotPublished` and `ErrNonLoopback`, opt-in non-loopback with loopback dialing.
+  - `docker.go` — a `DockerAPI` interface plus an environment-aware, version-negotiated real client adapter.
+  - `watcher.go` — startup reconciliation, event handling (`start`/`restart`/`die`/`stop`/`destroy`), bounded start-event retry, reconnect with backoff + re-reconcile, and forgetting disappeared containers.
+  - `probe.go` — a disposable `busybox`/`alpine` loopback ephemeral-publication probe that never pulls an image.
+- Wired the watcher into `Daemon.StartDockerWatcher` and `doctor`.
+- Added `examples/compose-postgres/compose.yaml`.
+- Tests: label whitespace (`"true"`), inspect loopback/non-loopback/not-published, watcher reconcile/forget with a fake API, a real-container discovery + recreate-preserves-frontend integration test, and a pgx `select 1` through the stable frontend.
+
+### Why
+- Docker is an adapter over the same registration model; the registry core still builds and tests without Docker.
+- The pgx test is the guide's canonical acceptance check for the PostgreSQL use case.
+
+### What worked
+- `go mod tidy` resolved `github.com/docker/docker v28.5.1+incompatible` and `pgx/v5 v5.11.0`.
+- Real Docker tests pass against Docker 25.0.2 with the local `postgres:17` image, including `TestDockerDiscoveryAndRecreatePreservesFrontend` and `TestPostgresThroughFrontend`.
+- `make glazed-lint` continues to pass.
+
+### What didn't work
+- The first `go mod tidy` selected split Docker modules (`github.com/docker/docker/api@v1.56.0`, `github.com/docker/docker/client@v0.6.0`) that declare the module path `github.com/moby/moby/api` and failed to resolve. Fixed by pinning `github.com/docker/docker@v28.5.1+incompatible` before tidying.
+- `container.NetworkSettings.Ports` is a `nat.PortMap` keyed by `nat.Port`, not `string`; string indexing failed to compile. Fixed with `nat.Port(...)`.
+- The inspect test literal placed `Ports` directly on `NetworkSettings`, but it lives on the embedded `NetworkSettingsBase`; fixed the literal.
+- The first recreate test used a different Compose service name, which produced a different owner key and would conflict. Fixed by removing the first container and recreating it with the same project/service.
+
+### What I learned
+- Docker's module split is easy to land on accidentally; pinning the `+incompatible` line keeps the API packages in one module.
+- Docker publishes the host port at container start, before the application inside is ready; proxying to it is fine, but application-level readiness (pgx) needs its own retry loop.
+
+### What warrants a second pair of eyes
+- Whether the reconcile-after-reconnect should also forget tracked containers that stopped during the disconnect (it does, via the `seen` set).
+- The probe's image allowlist and behavior when no small image exists (reports skip, never pulls).
+
+### What should be done in the future
+- HTTP kind Docker discovery is now supported via `io.devmesh.http-host`; add a real container HTTP E2E test.
+- Consider health/readiness probing before advertising `ready`.
+
+### Code review instructions
+- Review `internal/dockerwatch/inspect.go` (safety), `watcher.go` (races/reconnect), then `integration/docker_test.go` and `integration/postgres_test.go`.
+- Validate: `go test -race ./...` with Docker present; the Docker tests skip cleanly when it is absent.
+
+### Technical details
+- Commit `a399d71` — ":whale: Add Docker watcher, doctor publication probe, and PostgreSQL end-to-end tests".
+
+## Step 7: Shared HTTP reverse proxy and TLS (PR 6-7)
+
+The final phase layered hostname routing on the same registry: one HTTP/HTTPS
+listener serves many local services because HTTP carries a Host header. TLS
+reuses an existing PEM certificate/key pair; ACME automation remains out of
+scope.
+
+### What I did
+- `internal/proxy/http.go`: a concurrent `Router` keyed by normalized hostname, backed by `httputil.ReverseProxy`; 404 for unknown hosts and 503 for unavailable backends.
+- Daemon: `kind=http` registrations take an `http_host`, store a stable frontend URL, and install a route whose provider reads the current registry backend; the configured HTTP listener starts in `Start`.
+- API/Docker: `http_host` field plus `io.devmesh.http-host` label.
+- TLS: `daemon.loadTLS` validates an existing cert/key pair at startup and serves the same router over TLS; `MinVersion` TLS 1.2.
+- Tests: `TestHTTPProxyRoutesByHost` (A/B routing, 404, 503), `TestHTTPSProxyWithExistingCertificate` (self-signed cert, real TLS request), and `internal/daemon` tests for partial/invalid cert config.
+
+### What worked
+- HTTP and HTTPS end-to-end tests pass; `go test -race ./...` and `make glazed-lint` remain green.
+
+### What didn't work
+- The first HTTPS test draft referenced three helpers that did not exist (`roundRobinBackend`, `trimHTTP`, `insecureTLSConfig`); replaced them with `httptest.NewServer` and inline `strings.TrimPrefix`/`tls.Config`.
+
+### What I learned
+- Because the router's provider reads the registry on each request, marking a service unavailable automatically yields 503 without mutating the route.
+
+### What warrants a second pair of eyes
+- Route ownership when two different services claim the same hostname (last write wins; no conflict rule is enforced yet).
+- The guide's one-label wildcard rule for generated hostnames is documented but not yet auto-generated; registrations must pass an explicit `http_host`.
+
+### What should be done in the future
+- Enforce hostname uniqueness separately from service-name uniqueness; add auto hostname generation with the one-label wildcard rule; add ACME later.
+
+### Code review instructions
+- Review `internal/proxy/http.go` (host normalization and reverse-proxy director) and `daemon.loadTLS`.
+- Validate: `go test ./integration/... -run 'HTTP'` and `go test ./internal/daemon/...`.
+
+### Technical details
+- Commits `5239164` (HTTP proxy) and `7f180c4` (TLS).
+
+## Step 8: Full validation and commit history
+
+Before wrapping up, I ran the complete validation gate across the whole tree.
+
+### What I did
+- `go build ./...`, `go vet ./...`, `go test ./... -count=1`, `go test -race ./... -count=1`, and `GOWORK=off make glazed-lint`.
+
+### What worked
+- All packages pass, including the real-Docker integration tests (Docker 25.0.2) and the pgx PostgreSQL test.
+- `glazed-lint` passes at Glazed v1.4.4 after file-level suppressions with documented reasons for the intentional `DEVMESH_*` env reads.
+
+### What didn't work
+- No failures at this checkpoint.
+
+### Technical details
+- Commit sequence: `e4771fd` (ticket) → `97103c6` (TCP MVP) → `a399d71` (Docker/diagnostics) → `5239164` (HTTP proxy) → `7f180c4` (TLS).
+- Full suite: `go test -race ./...` passes; Docker-dependent tests skip when Docker is unavailable.

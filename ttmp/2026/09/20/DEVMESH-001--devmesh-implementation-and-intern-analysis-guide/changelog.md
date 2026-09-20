@@ -20,3 +20,13 @@ Uploaded the intern guide to reMarkable as a bundle (source spec + design doc, T
 ### Related Files
 
 - /home/manuel/code/wesen/2026-09-20--devmesh/ttmp/2026/09/20/DEVMESH-001--devmesh-implementation-and-intern-analysis-guide/design-doc/01-devmesh-intern-analysis-and-implementation-guide.md — Uploaded deliverable
+
+## 2026-09-20
+
+Implemented the devmesh PR plan in five commits: TCP MVP core (registry, bind-first allocator, TCP proxy, leases, Go client, Glazed CLI), Docker watcher + doctor probe + PostgreSQL pgx E2E, shared HTTP reverse proxy, and wildcard TLS with an existing PEM pair. All tests pass under -race; glazed-lint passes at Glazed v1.4.4; real-Docker tests run against Docker 25.0.2 with postgres:17.
+
+### Related Files
+
+- /home/manuel/code/wesen/2026-09-20--devmesh/internal/dockerwatch/watcher.go — Docker discovery and reconciliation
+- /home/manuel/code/wesen/2026-09-20--devmesh/internal/proxy/http.go — Shared hostname-routed HTTP/HTTPS proxy
+- /home/manuel/code/wesen/2026-09-20--devmesh/internal/runtime/allocator.go — Bind-first stable frontend allocation

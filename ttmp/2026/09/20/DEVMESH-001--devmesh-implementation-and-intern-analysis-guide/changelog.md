@@ -30,3 +30,12 @@ Implemented the devmesh PR plan in five commits: TCP MVP core (registry, bind-fi
 - /home/manuel/code/wesen/2026-09-20--devmesh/internal/dockerwatch/watcher.go — Docker discovery and reconciliation
 - /home/manuel/code/wesen/2026-09-20--devmesh/internal/proxy/http.go — Shared hostname-routed HTTP/HTTPS proxy
 - /home/manuel/code/wesen/2026-09-20--devmesh/internal/runtime/allocator.go — Bind-first stable frontend allocation
+
+## 2026-09-20
+
+Migrated devmeshd configuration to Glazed env/config middleware. Removed config.Load and all os.Getenv reads from internal/config and internal/transport; the existing JSON config shape is preserved via config.FileMapper. Deleted both glazed-lint file-ignore exceptions; make glazed-lint now passes clean.
+
+### Related Files
+
+- /home/manuel/code/wesen/2026-09-20--devmesh/cmd/devmeshd/cmds/serve.go — Glazed section, middleware chain, configFromSettings
+- /home/manuel/code/wesen/2026-09-20--devmesh/internal/config/config.go — Domain config + JSON FileMapper

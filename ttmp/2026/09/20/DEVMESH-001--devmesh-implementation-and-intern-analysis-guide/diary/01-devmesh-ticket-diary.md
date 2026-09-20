@@ -398,3 +398,59 @@ Before wrapping up, I ran the complete validation gate across the whole tree.
 ### Technical details
 - Commit sequence: `e4771fd` (ticket) → `97103c6` (TCP MVP) → `a399d71` (Docker/diagnostics) → `5239164` (HTTP proxy) → `7f180c4` (TLS).
 - Full suite: `go test -race ./...` passes; Docker-dependent tests skip when Docker is unavailable.
+
+## Step 9: Move env/config loading into Glazed middleware
+
+A review of the CLI surface showed that the daemon still read `DEVMESH_*` via
+`os.Getenv` and loaded its JSON file with a hand-written `config.Load`. That
+required two `glazedclilint:file-ignore` exceptions and duplicated precedence
+logic the framework already owns. This step replaced both with Glazed's env and
+config-file middleware, keeping the existing JSON file shape through a
+`ConfigFileMapper`.
+
+### Prompt Context
+**User prompt (verbatim):** "we should use the env/config middleware and not use manual os.Geenv or config load file I think, except if the config file has its own format that can't be matched to glazed flags."
+**Assistant interpretation:** Migrate env/file config to Glazed middleware; keep the JSON format if it can be mapped to fields.
+**Inferred user intent:** Remove manual env/file handling and the lint exceptions, while preserving the documented config file contract.
+
+### What I did
+- Rewrote `internal/config/config.go` to keep only the domain `Config` type, `Default()`, `DefaultStatePath()`, and a new `FileMapper` that maps the devmesh JSON shape (flat `tcp_frontend_*`/`runtime_idle_ttl`/... keys plus nested `docker`/`http` objects) onto the default Glazed section's kebab-case fields.
+- Extended `cmd/devmeshd/cmds/serve.go` with every config field on its Glazed section and a custom `ParserConfig().MiddlewaresFunc` chain: `FromCobra → FromArgs → FromEnv("DEVMESH") → FromFile(path, WithConfigFileMapper(FileMapper)) → FromDefaults`. `configFromSettings` converts decoded values into `config.Config`.
+- Removed `os.Getenv` from `internal/transport/unix.go`; `DefaultSocketPath` now only uses the home directory. Dropped the `XDG_RUNTIME_DIR` rung because Glazed env keys are `<APPPREFIX>_<FIELD>` and cannot express a standard `XDG_RUNTIME_DIR`.
+- Deleted both `//glazedclilint:file-ignore` directives.
+- Added tests: `FileMapper` flat/nested/partial/error cases, `configFromSettings`, and duration fallback.
+- Updated guide sections 8.2 (precedence) and 9.2 (socket path).
+
+### Why
+- One precedence chain owned by Glazed replaces a parallel `config.Load` implementation.
+- Provenance is now traceable: `--print-parsed-fields` records `source: config`.
+- Removing manual env reads removes the need for lint suppressions.
+
+### What worked
+- End-to-end config file: a file with `tcp_frontend_min: 24000` produced frontend `127.0.0.1:24011`; `--print-parsed-fields` showed `defaults 15000` then `config 24000`.
+- Env: `DEVMESH_TCP_FRONTEND_MIN=24500` produced `127.0.0.1:24501`.
+- Precedence: a `--tcp-frontend-min 25000` flag beat both the env and the config file (`127.0.0.1:25035`).
+- `go test -race ./...` passes and `make glazed-lint` passes with zero suppressions.
+
+### What didn't work
+- The first guide edit attempt targeted slightly different headings/whitespace; re-read the section and matched exactly.
+- A first attempt to put the file-ignore deletion and socket-path rewrite in one edit call failed atomically because the directive had shifted into the doc-comment group; fixed with a single exact block replacement.
+
+### What I learned
+- Glazed's built-in parser chain orders sources as Defaults (innermost) → Config → Env → Args → Cobra (outermost), which yields the expected low→high precedence; a custom `MiddlewaresFunc` must reproduce that order.
+- The built-in `ConfigPlanBuilder` path cannot inject a `ConfigFileMapper`, so keeping the devmesh JSON shape requires the custom `MiddlewaresFunc`.
+
+### What warrants a second pair of eyes
+- The config file path is read from the `--config` Cobra flag only; `DEVMESH_CONFIG` is not honored because env is applied after the config middleware executes. Decide whether to support an env-provided path (e.g. by adding a small pre-parse).
+- Dropping `XDG_RUNTIME_DIR` is a behavior change for users who relied on it.
+
+### What should be done in the future
+- Re-add XDG support as an explicit `runtime-dir` field default if desired, or document `DEVMESH_SOCKET` as the supported override.
+
+### Code review instructions
+- Review `internal/config/config.go` (`FileMapper`), `cmd/devmeshd/cmds/serve.go` (`ParserConfig`/`configFromSettings`), and `internal/transport/unix.go`.
+- Validate: `go test -race ./...`, `make glazed-lint`, and the manual `--print-parsed-fields` commands above.
+
+### Technical details
+- Commit `c07d2f1` — ":recycle: Move daemon env/config loading into Glazed middleware".
+- Framework sources: `FromCobra`, `FromArgs`, `FromEnv`, `FromFile(WithConfigFileMapper)`, `FromDefaults` in `pkg/cmds/sources`.

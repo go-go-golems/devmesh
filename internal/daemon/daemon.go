@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/wesen/devmesh/internal/config"
+	"github.com/wesen/devmesh/internal/dockerwatch"
 	"github.com/wesen/devmesh/internal/lease"
 	"github.com/wesen/devmesh/internal/registry"
 	"github.com/wesen/devmesh/internal/runtime"
@@ -112,6 +113,49 @@ func (d *Daemon) Start(ctx context.Context) {
 	}()
 
 	d.logger.Info("daemon_started", "version", Version, "state", d.cfg.StatePath)
+
+	d.StartDockerWatcher(ctx)
+}
+
+// StartDockerWatcher launches the Docker adapter when enabled. Docker being
+// unavailable only degrades the Docker status; the rest of devmesh keeps
+// running.
+func (d *Daemon) StartDockerWatcher(ctx context.Context) {
+	if !d.cfg.Docker.Enabled {
+		d.SetDockerStatus("disabled")
+		return
+	}
+	api, err := dockerwatch.NewClient()
+	if err != nil {
+		d.logger.Warn("docker_connect_failed", "error", err)
+		d.SetDockerStatus("degraded")
+		return
+	}
+	cb := dockerwatch.Callbacks{
+		OnRegister: func(ctx context.Context, reg dockerwatch.Registration) error {
+			_, rerr := d.Register(RegisterParams{
+				Name:              reg.Name,
+				Kind:              registry.Kind(reg.Kind),
+				AppProtocol:       reg.AppProtocol,
+				Backend:           registry.Backend{Host: reg.BackendHost, Port: reg.BackendPort},
+				PreferredPort:     reg.PreferredPort,
+				Source:            registry.SourceDocker,
+				OwnerKey:          reg.OwnerKey,
+				DockerContainerID: reg.ContainerID,
+			})
+			return rerr
+		},
+		OnForget: func(ownerKey, name string) { d.ForgetByOwner(ownerKey, name) },
+		OnStatus: d.SetDockerStatus,
+	}
+	w := dockerwatch.NewWatcher(api, d.cfg.Docker.AllowNonLoopbackPublishedPorts, cb, d.logger)
+	d.wg.Add(1)
+	go func() {
+		defer d.wg.Done()
+		if err := w.Run(ctx); err != nil {
+			d.logger.Warn("docker_watcher_stopped", "error", err)
+		}
+	}()
 }
 
 func (d *Daemon) sweepLeases(now time.Time) {

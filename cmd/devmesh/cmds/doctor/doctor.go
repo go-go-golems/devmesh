@@ -8,6 +8,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/go-go-golems/glazed/pkg/cmds"
 	"github.com/go-go-golems/glazed/pkg/cmds/values"
@@ -15,6 +16,7 @@ import (
 	"github.com/go-go-golems/glazed/pkg/types"
 	"github.com/wesen/devmesh/cmd/devmesh/cmds/daemonconn"
 	"github.com/wesen/devmesh/internal/api"
+	"github.com/wesen/devmesh/internal/dockerwatch"
 	"github.com/wesen/devmesh/internal/transport"
 )
 
@@ -93,6 +95,9 @@ func runChecks(ctx context.Context, client *transport.Client, socket string) []C
 		default:
 			checks = append(checks, Check{"docker", "fail", "status: " + health.Docker})
 		}
+		if health.Docker != "disabled" {
+			checks = append(checks, probeDockerPublication(ctx)...)
+		}
 	}
 
 	// Loopback binding.
@@ -117,4 +122,28 @@ func runChecks(ctx context.Context, client *transport.Client, socket string) []C
 	}
 
 	return checks
+}
+
+// probeDockerPublication verifies loopback-only ephemeral host-port publishing
+// with a disposable container. It never pulls an image.
+func probeDockerPublication(ctx context.Context) []Check {
+	api, err := dockerwatch.NewClient()
+	if err != nil {
+		return []Check{{"docker-publication-probe", "fail", err.Error()}}
+	}
+	defer func() { _ = api.Close() }()
+
+	probeCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	res, err := dockerwatch.ProbeLoopbackPublication(probeCtx, api)
+	switch {
+	case err != nil:
+		return []Check{{"docker-publication-probe", "fail", err.Error()}}
+	case res.Skipped:
+		return []Check{{"docker-publication-probe", "skip", res.Detail}}
+	case res.Supported:
+		return []Check{{"docker-publication-probe", "ok", res.Detail}}
+	default:
+		return []Check{{"docker-publication-probe", "fail", res.Detail + "; devmesh will not auto-register containers exposed beyond loopback"}}
+	}
 }

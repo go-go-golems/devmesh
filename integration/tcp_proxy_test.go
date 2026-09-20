@@ -34,6 +34,10 @@ func freeBase(t *testing.T) int {
 }
 
 func startHarness(t *testing.T, leaseTTL time.Duration) *harness {
+	return startHarnessWithDocker(t, leaseTTL, false)
+}
+
+func startHarnessWithDocker(t *testing.T, leaseTTL time.Duration, dockerEnabled bool) *harness {
 	t.Helper()
 	dir := t.TempDir()
 	socket := filepath.Join(dir, "devmesh.sock")
@@ -45,7 +49,7 @@ func startHarness(t *testing.T, leaseTTL time.Duration) *harness {
 	cfg.TCPFrontendMin = base + 1
 	cfg.TCPFrontendMax = base + 40
 	cfg.LeaseTTL = leaseTTL
-	cfg.Docker.Enabled = false
+	cfg.Docker.Enabled = dockerEnabled
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	d, err := daemon.New(cfg, logger)

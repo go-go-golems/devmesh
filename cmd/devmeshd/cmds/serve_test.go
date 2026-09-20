@@ -3,7 +3,57 @@ package cmds
 import (
 	"testing"
 	"time"
+
+	"github.com/spf13/cobra"
 )
+
+func TestResolveConfigPathFromEnv(t *testing.T) {
+	t.Setenv("DEVMESH_CONFIG", "/tmp/from-env.json")
+	desc := NewServeCommand().Description()
+	cmd := &cobra.Command{Use: "serve"}
+	cmd.Flags().String("config", "", "")
+
+	got, err := resolveConfigPath(desc, cmd)
+	if err != nil {
+		t.Fatalf("resolveConfigPath: %v", err)
+	}
+	if got != "/tmp/from-env.json" {
+		t.Fatalf("got %q, want /tmp/from-env.json", got)
+	}
+}
+
+func TestResolveConfigPathFlagWinsOverEnv(t *testing.T) {
+	t.Setenv("DEVMESH_CONFIG", "/tmp/from-env.json")
+	desc := NewServeCommand().Description()
+	cmd := &cobra.Command{Use: "serve"}
+	cmd.Flags().String("config", "", "")
+	if err := cmd.Flags().Set("config", "/tmp/from-flag.json"); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := resolveConfigPath(desc, cmd)
+	if err != nil {
+		t.Fatalf("resolveConfigPath: %v", err)
+	}
+	if got != "/tmp/from-flag.json" {
+		t.Fatalf("got %q, want /tmp/from-flag.json", got)
+	}
+}
+
+func TestResolveConfigPathAbsent(t *testing.T) {
+	t.Setenv("DEVMESH_CONFIG", "")
+	desc := NewServeCommand().Description()
+	cmd := &cobra.Command{Use: "serve"}
+	cmd.Flags().String("config", "", "")
+
+	got, err := resolveConfigPath(desc, cmd)
+	if err != nil {
+		t.Fatalf("resolveConfigPath: %v", err)
+	}
+	if got != "" {
+		t.Fatalf("got %q, want empty", got)
+	}
+}
 
 func TestConfigFromSettings(t *testing.T) {
 	s := &ServeSettings{

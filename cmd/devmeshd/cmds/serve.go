@@ -86,15 +86,20 @@ func NewServeCommand() *ServeCommand {
 // env loading with the DEVMESH prefix and config-file loading through a custom
 // mapper that preserves the devmesh JSON shape.
 func ParserConfig() cli.CobraParserConfig {
+	desc := NewServeCommand().Description()
 	return cli.CobraParserConfig{
 		AppName: "devmeshd",
 		MiddlewaresFunc: func(_ *values.Values, cmd *cobra.Command, args []string) ([]cmd_sources.Middleware, error) {
+			path, err := resolveConfigPath(desc, cmd)
+			if err != nil {
+				return nil, err
+			}
 			chain := []cmd_sources.Middleware{
 				cmd_sources.FromCobra(cmd, fields.WithSource("cobra")),
 				cmd_sources.FromArgs(args, fields.WithSource("arguments")),
 				cmd_sources.FromEnv("DEVMESH", fields.WithSource("env")),
 			}
-			if path, err := cmd.Flags().GetString("config"); err == nil && path != "" {
+			if path != "" {
 				chain = append(chain, cmd_sources.FromFile(path,
 					cmd_sources.WithConfigFileMapper(config.FileMapper),
 					cmd_sources.WithParseOptions(fields.WithSource("config")),
@@ -104,6 +109,30 @@ func ParserConfig() cli.CobraParserConfig {
 			return chain, nil
 		},
 	}
+}
+
+// resolveConfigPath determines the config file path with flag > env precedence.
+// The flag is checked on the Cobra command directly; when it is unset, Glazed's
+// env source is executed in a throwaway pre-parse so DEVMESH_CONFIG can supply
+// the path without any direct os.Getenv call in application code.
+func resolveConfigPath(desc *cmds.CommandDescription, cmd *cobra.Command) (string, error) {
+	if path, err := cmd.Flags().GetString("config"); err == nil && path != "" {
+		return path, nil
+	}
+
+	parsed := values.New()
+	if _, err := cmd_sources.ExecuteWithSchema(desc.Schema, parsed,
+		cmd_sources.FromEnv("DEVMESH", fields.WithSource("env")),
+	); err != nil {
+		return "", err
+	}
+	var s struct {
+		Config string `glazed:"config"`
+	}
+	if err := parsed.DecodeSectionInto(schema.DefaultSlug, &s); err != nil {
+		return "", err
+	}
+	return s.Config, nil
 }
 
 // Run starts the daemon HTTP server over the Unix socket and blocks until ctx

@@ -1,8 +1,6 @@
 // Package transport provides HTTP-over-Unix-socket plumbing for the devmesh
 // administrative API: socket path resolution, safe stale-socket handling, and
 // a matching HTTP client.
-//
-//glazedclilint:file-ignore socket path resolution intentionally honors DEVMESH_SOCKET/XDG_RUNTIME_DIR as documented domain config, not CLI flags
 package transport
 
 import (
@@ -13,17 +11,11 @@ import (
 	"time"
 )
 
-// DefaultSocketPath resolves the preferred socket path:
-//  1. $DEVMESH_SOCKET
-//  2. $XDG_RUNTIME_DIR/devmesh/devmesh.sock
-//  3. ~/.devmesh/run/devmesh.sock
+// DefaultSocketPath resolves the preferred socket path from the user's home
+// directory. Environment overrides are handled by Glazed's env middleware at
+// the command layer (DEVMESH_SOCKET for the socket field), so this package does
+// not read the environment itself.
 func DefaultSocketPath() string {
-	if v := os.Getenv("DEVMESH_SOCKET"); v != "" {
-		return v
-	}
-	if xdg := os.Getenv("XDG_RUNTIME_DIR"); xdg != "" {
-		return filepath.Join(xdg, "devmesh", "devmesh.sock")
-	}
 	home, err := os.UserHomeDir()
 	if err != nil || home == "" {
 		return filepath.Join(os.TempDir(), "devmesh.sock")

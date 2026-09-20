@@ -843,8 +843,19 @@ per-name creation (see §27).
 CLI flags > environment variables > config file > compiled defaults
 ```
 
-Implement this as an explicit merge, not by relying on library magic. A single
-`config.Load(path string, flags Config) (Config, error)` function is enough.
+Implement this with **Glazed's env and config-file middleware**, not a bespoke
+`config.Load` that reads `os.Getenv` and files itself. `devmeshd serve` declares
+every config field on its Glazed section; the `DEVMESH` env prefix gives
+`DEVMESH_TCP_FRONTEND_MIN`, `DEVMESH_DOCKER_ENABLED`, and so on, and the
+config-file middleware loads a file through `config.FileMapper`.
+
+`config.FileMapper` is the compatibility shim that keeps the documented JSON
+shape (flat snake_case keys plus nested `docker`/`http` objects) and maps it onto
+the default Glazed section's kebab-case fields. Because it is a mapper rather
+than a second loader, the file participates in the same provenance chain
+(`--print-parsed-fields` shows `source: config`) and the precedence rules above
+remain framework-owned. The in-process `config.Config` struct still exists as the
+domain representation; `configFromSettings` converts decoded fields into it.
 
 ### 8.3 Environment variables
 
@@ -917,9 +928,15 @@ control.
 
 Preferred order:
 
-1. `$DEVMESH_SOCKET` if set;
-2. `$XDG_RUNTIME_DIR/devmesh/devmesh.sock` if `XDG_RUNTIME_DIR` exists;
-3. `~/.devmesh/run/devmesh.sock`.
+1. the `socket` field, populated by `--socket` or `DEVMESH_SOCKET` (**Glazed env
+   middleware**);
+2. `~/.devmesh/run/devmesh.sock` (the compiled default).
+
+The old `$XDG_RUNTIME_DIR` rung was removed when env handling moved to Glazed:
+Glazed env keys are `<APPPREFIX>_<FIELD>`, so a standard `XDG_RUNTIME_DIR`
+cannot be expressed as a field. Use `DEVMESH_SOCKET` instead. All env reads and
+config-file loading happen in the Glazed middleware chain; `internal/config`,
+`internal/transport`, and `internal/daemon` never call `os.Getenv`.
 
 Create parent directories with mode `0700`. The socket itself should be
 accessible only to the current user.

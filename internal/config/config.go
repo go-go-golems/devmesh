@@ -1,17 +1,23 @@
-// Package config loads devmesh daemon configuration from a JSON file and
-// environment variables, applying compiled defaults. Precedence is
-// env > file > defaults (CLI flags are merged by the command layer).
+// Package config defines the devmesh daemon configuration model and the
+// mapping from the devmesh JSON config-file shape onto Glazed command fields.
 //
-//glazedclilint:file-ignore DEVMESH_* environment overrides are a documented domain config source for the daemon, not CLI flags
+// Configuration precedence is owned by Glazed's middleware chain
+// (defaults < config file < env < args < flags). This package no longer reads
+// environment variables or files itself; it exposes the in-process Config type,
+// its compiled defaults, and FileMapper for the config-file middleware.
 package config
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
-	"strconv"
 	"time"
 )
+
+// SectionSlug is the Glazed section that `devmeshd serve` configuration fields
+// live in. It must equal glazed's schema.DefaultSlug.
+const SectionSlug = "default"
 
 // DockerConfig controls the Docker adapter.
 type DockerConfig struct {
@@ -19,7 +25,7 @@ type DockerConfig struct {
 	AllowNonLoopbackPublishedPorts bool `json:"allow_non_loopback_published_ports"`
 }
 
-// HTTPConfig controls the future HTTP/TLS proxy phase.
+// HTTPConfig controls the HTTP/TLS proxy phase.
 type HTTPConfig struct {
 	Enabled    bool   `json:"enabled"`
 	HTTPAddr   string `json:"http_addr"`
@@ -29,7 +35,7 @@ type HTTPConfig struct {
 	KeyFile    string `json:"key_file,omitempty"`
 }
 
-// Config is the merged daemon configuration.
+// Config is the in-process daemon configuration.
 type Config struct {
 	Socket          string        `json:"socket"`
 	TCPFrontendHost string        `json:"tcp_frontend_host"`
@@ -43,7 +49,8 @@ type Config struct {
 	HTTP            HTTPConfig    `json:"http"`
 }
 
-// Default returns the compiled defaults.
+// Default returns the compiled defaults. These mirror the Glazed field defaults
+// declared by `devmeshd serve`; keep the two in sync.
 func Default() Config {
 	return Config{
 		TCPFrontendHost: "127.0.0.1",
@@ -61,141 +68,6 @@ func Default() Config {
 	}
 }
 
-type fileConfig struct {
-	Socket          string `json:"socket"`
-	TCPFrontendHost string `json:"tcp_frontend_host"`
-	TCPFrontendMin  *int   `json:"tcp_frontend_min"`
-	TCPFrontendMax  *int   `json:"tcp_frontend_max"`
-	RuntimeIdleTTL  string `json:"runtime_idle_ttl"`
-	LeaseTTL        string `json:"lease_ttl"`
-	ShutdownTimeout string `json:"shutdown_timeout"`
-	StatePath       string `json:"state_path"`
-	Docker          *struct {
-		Enabled                        *bool `json:"enabled"`
-		AllowNonLoopbackPublishedPorts *bool `json:"allow_non_loopback_published_ports"`
-	} `json:"docker"`
-	HTTP *struct {
-		Enabled    *bool  `json:"enabled"`
-		HTTPAddr   string `json:"http_addr"`
-		HTTPSAddr  string `json:"https_addr"`
-		BaseDomain string `json:"base_domain"`
-		CertFile   string `json:"cert_file"`
-		KeyFile    string `json:"key_file"`
-	} `json:"http"`
-}
-
-// Load reads path (if non-empty), merges it over Default, then applies
-// environment overrides.
-func Load(path string) (Config, error) {
-	cfg := Default()
-	if path != "" {
-		if err := applyFile(&cfg, path); err != nil {
-			return Config{}, err
-		}
-	}
-	applyEnv(&cfg)
-	return cfg, nil
-}
-
-func applyFile(cfg *Config, path string) error {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return err
-	}
-	var fc fileConfig
-	if err := json.Unmarshal(data, &fc); err != nil {
-		return err
-	}
-	if fc.Socket != "" {
-		cfg.Socket = fc.Socket
-	}
-	if fc.TCPFrontendHost != "" {
-		cfg.TCPFrontendHost = fc.TCPFrontendHost
-	}
-	if fc.TCPFrontendMin != nil {
-		cfg.TCPFrontendMin = *fc.TCPFrontendMin
-	}
-	if fc.TCPFrontendMax != nil {
-		cfg.TCPFrontendMax = *fc.TCPFrontendMax
-	}
-	if fc.StatePath != "" {
-		cfg.StatePath = fc.StatePath
-	}
-	if d, err := parseDuration(fc.RuntimeIdleTTL); err != nil {
-		return err
-	} else if d != 0 {
-		cfg.RuntimeIdleTTL = d
-	}
-	if d, err := parseDuration(fc.LeaseTTL); err != nil {
-		return err
-	} else if d != 0 {
-		cfg.LeaseTTL = d
-	}
-	if d, err := parseDuration(fc.ShutdownTimeout); err != nil {
-		return err
-	} else if d != 0 {
-		cfg.ShutdownTimeout = d
-	}
-	if fc.Docker != nil {
-		if fc.Docker.Enabled != nil {
-			cfg.Docker.Enabled = *fc.Docker.Enabled
-		}
-		if fc.Docker.AllowNonLoopbackPublishedPorts != nil {
-			cfg.Docker.AllowNonLoopbackPublishedPorts = *fc.Docker.AllowNonLoopbackPublishedPorts
-		}
-	}
-	if fc.HTTP != nil {
-		if fc.HTTP.Enabled != nil {
-			cfg.HTTP.Enabled = *fc.HTTP.Enabled
-		}
-		if fc.HTTP.HTTPAddr != "" {
-			cfg.HTTP.HTTPAddr = fc.HTTP.HTTPAddr
-		}
-		if fc.HTTP.HTTPSAddr != "" {
-			cfg.HTTP.HTTPSAddr = fc.HTTP.HTTPSAddr
-		}
-		if fc.HTTP.BaseDomain != "" {
-			cfg.HTTP.BaseDomain = fc.HTTP.BaseDomain
-		}
-		if fc.HTTP.CertFile != "" {
-			cfg.HTTP.CertFile = fc.HTTP.CertFile
-		}
-		if fc.HTTP.KeyFile != "" {
-			cfg.HTTP.KeyFile = fc.HTTP.KeyFile
-		}
-	}
-	return nil
-}
-
-func parseDuration(s string) (time.Duration, error) {
-	if s == "" {
-		return 0, nil
-	}
-	return time.ParseDuration(s)
-}
-
-func applyEnv(cfg *Config) {
-	if v := os.Getenv("DEVMESH_SOCKET"); v != "" {
-		cfg.Socket = v
-	}
-	if v := os.Getenv("DEVMESH_TCP_FRONTEND_MIN"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil {
-			cfg.TCPFrontendMin = n
-		}
-	}
-	if v := os.Getenv("DEVMESH_TCP_FRONTEND_MAX"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil {
-			cfg.TCPFrontendMax = n
-		}
-	}
-	if v := os.Getenv("DEVMESH_DOCKER_ENABLED"); v != "" {
-		cfg.Docker.Enabled = v == "1" || v == "true" || v == "yes"
-	}
-	if v := os.Getenv("DEVMESH_STATE_PATH"); v != "" {
-		cfg.StatePath = v
-	}
-}
-
 // DefaultStatePath returns the OS-appropriate state file path.
 func DefaultStatePath() string {
 	dir, err := os.UserConfigDir()
@@ -207,4 +79,98 @@ func DefaultStatePath() string {
 		dir = filepath.Join(home, ".config")
 	}
 	return filepath.Join(dir, "devmesh", "state.json")
+}
+
+// FileMapper transforms the devmesh JSON config-file shape into the standard
+// Glazed section map. The on-disk format stays stable: flat snake_case keys
+// plus nested docker/http objects, for example:
+//
+//	{
+//	  "tcp_frontend_min": 15000,
+//	  "runtime_idle_ttl": "10m",
+//	  "docker": {"enabled": true, "allow_non_loopback_published_ports": false},
+//	  "http":   {"enabled": false, "http_addr": "127.0.0.1:8088"}
+//	}
+//
+// It maps onto the default section fields (kebab-case) declared by
+// `devmeshd serve`.
+func FileMapper(raw any) (map[string]map[string]any, error) {
+	root, err := asStringMap(raw)
+	if err != nil {
+		return nil, err
+	}
+	out := map[string]any{}
+	put := func(field string, v any) {
+		if v != nil {
+			out[field] = v
+		}
+	}
+
+	for key, v := range root {
+		switch key {
+		case "socket":
+			put("socket", v)
+		case "state_path":
+			put("state", v)
+		case "tcp_frontend_host":
+			put("tcp-frontend-host", v)
+		case "tcp_frontend_min":
+			put("tcp-frontend-min", v)
+		case "tcp_frontend_max":
+			put("tcp-frontend-max", v)
+		case "runtime_idle_ttl":
+			put("runtime-idle-ttl", v)
+		case "lease_ttl":
+			put("lease-ttl", v)
+		case "shutdown_timeout":
+			put("shutdown-timeout", v)
+		case "docker":
+			m, err := asStringMap(v)
+			if err != nil {
+				return nil, fmt.Errorf("docker: %w", err)
+			}
+			put("docker-enabled", m["enabled"])
+			put("docker-allow-non-loopback-published-ports", m["allow_non_loopback_published_ports"])
+		case "http":
+			m, err := asStringMap(v)
+			if err != nil {
+				return nil, fmt.Errorf("http: %w", err)
+			}
+			put("http-enabled", m["enabled"])
+			put("http-addr", m["http_addr"])
+			put("https-addr", m["https_addr"])
+			put("http-base-domain", m["base_domain"])
+			put("http-cert-file", m["cert_file"])
+			put("http-key-file", m["key_file"])
+		}
+	}
+	return map[string]map[string]any{SectionSlug: out}, nil
+}
+
+// asStringMap normalizes the map types produced by YAML and JSON unmarshalling.
+func asStringMap(v any) (map[string]any, error) {
+	switch m := v.(type) {
+	case map[string]any:
+		return m, nil
+	case map[any]any:
+		out := make(map[string]any, len(m))
+		for k, val := range m {
+			ks, ok := k.(string)
+			if !ok {
+				return nil, fmt.Errorf("config map key %v is not a string", k)
+			}
+			out[ks] = val
+		}
+		return out, nil
+	case nil:
+		return map[string]any{}, nil
+	default:
+		if raw, ok := v.(json.RawMessage); ok {
+			var decoded map[string]any
+			if err := json.Unmarshal(raw, &decoded); err == nil {
+				return decoded, nil
+			}
+		}
+		return nil, fmt.Errorf("expected a mapping, got %T", v)
+	}
 }

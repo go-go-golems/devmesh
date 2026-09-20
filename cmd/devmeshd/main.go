@@ -35,7 +35,7 @@ func run() error {
 	}
 
 	serveCmd, err := cli.BuildCobraCommand(cmds.NewServeCommand(),
-		cli.WithParserConfig(cli.CobraParserConfig{AppName: "devmeshd"}))
+		cli.WithParserConfig(cmds.ParserConfig()))
 	if err != nil {
 		return err
 	}

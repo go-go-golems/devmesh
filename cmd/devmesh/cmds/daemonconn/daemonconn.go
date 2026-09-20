@@ -26,7 +26,7 @@ func NewSection() (*schema.SectionImpl, error) {
 		"Daemon Connection",
 		schema.WithFields(
 			fields.New("socket", fields.TypeString,
-				fields.WithHelp("Path to the devmeshd Unix socket (default: $DEVMESH_SOCKET, XDG, or ~/.devmesh)")),
+				fields.WithHelp("Path to the devmeshd Unix socket (env DEVMESH_SOCKET; default ~/.devmesh/run/devmesh.sock)")),
 			fields.New("timeout", fields.TypeString,
 				fields.WithDefault("5s"),
 				fields.WithHelp("Per-request HTTP timeout")),

@@ -454,3 +454,51 @@ config-file middleware, keeping the existing JSON file shape through a
 ### Technical details
 - Commit `c07d2f1` — ":recycle: Move daemon env/config loading into Glazed middleware".
 - Framework sources: `FromCobra`, `FromArgs`, `FromEnv`, `FromFile(WithConfigFileMapper)`, `FromDefaults` in `pkg/cmds/sources`.
+
+## Step 10: Pre-parse DEVMESH_CONFIG for the config-file path
+
+Step 9 left one gap: the config middleware read the path only from the `--config`
+Cobra flag, so `DEVMESH_CONFIG` was ignored because Glazed applies env after the
+config middleware runs. This step added a framework-based pre-parse so the path
+can also come from the environment, without reintroducing `os.Getenv`.
+
+### Prompt Context
+**User prompt (verbatim):** "add a pre-parse for the env-provided path. commit at appropriate intervals and keep a detailed diary as you work (using the diary format from the skill)"
+**Assistant interpretation:** Resolve the config path from `--config` or `DEVMESH_CONFIG`, using Glazed to read env rather than raw `os.Getenv`.
+**Inferred user intent:** Close the env-config gap while keeping the no-manual-env policy and the clean lint.
+
+### What I did
+- Added `resolveConfigPath(desc, cmd)` in `cmd/devmeshd/cmds/serve.go`: it checks `cmd.Flags().GetString("config")` first (flag wins), then runs `cmd_sources.ExecuteWithSchema(desc.Schema, values.New(), cmd_sources.FromEnv("DEVMESH", ...))` in a throwaway pre-parse and decodes the `config` field.
+- Wired `resolveConfigPath` into `ParserConfig().MiddlewaresFunc` before building the middleware chain.
+- Added unit tests: env path, flag-beats-env, and no-path-absent.
+- Updated guide §8.2 to document the path precedence and the pre-parse.
+
+### Why
+- Glazed's config middleware cannot see env-set fields because env is applied later; a pre-parse using the same source keeps everything framework-owned.
+- Avoiding `os.Getenv` preserves the zero-suppression `glazed-lint` state from Step 9.
+
+### What worked
+- `DEVMESH_CONFIG=/tmp/devmesh-cfg.json devmeshd serve` produced frontend `127.0.0.1:24014` (file range 24000–24040), confirming the env path is honored.
+- `--print-parsed-fields` with only `DEVMESH_CONFIG` showed `defaults 15000 → source: config 24000`.
+- Unit tests for env path, flag precedence, and absence pass; `go test -race ./...` and `make glazed-lint` pass with no exceptions.
+
+### What didn't work
+- No failures at this step.
+
+### What I learned
+- `cmd_sources.ExecuteWithSchema` with a single `FromEnv` middleware is enough to read one field from the environment in isolation; the discarded `values.Values` does not affect the real parse.
+- `MiddlewaresFunc` receives only the command-settings values, not the command schema, so the schema must be captured from the command description when building `ParserConfig`.
+
+### What warrants a second pair of eyes
+- The pre-parse loads all `DEVMESH_*` fields into a throwaway `values.Values`; if a future field type errors on an empty/malformed env value, that error would surface during path resolution. It currently returns a clear error, which seems acceptable.
+- The `state` field maps to `DEVMESH_STATE`, while the old manual loader used `DEVMESH_STATE_PATH`; the config-file key remains `state_path`. Confirm the env rename is acceptable (it is not yet documented publicly).
+
+### What should be done in the future
+- Document the exact env variable list (DEVMESH_SOCKET, DEVMESH_CONFIG, DEVMESH_TCP_FRONTEND_MIN/MAX, DEVMESH_LEASE_TTL, DEVMESH_DOCKER_ENABLED, DEVMESH_STATE, ...) in the README/help page.
+
+### Code review instructions
+- Review `resolveConfigPath` and its tests in `cmd/devmeshd/cmds/`.
+- Validate: `go test ./cmd/devmeshd/...` and the manual `DEVMESH_CONFIG` run above.
+
+### Technical details
+- Commit `d11d319` — ":mag: Pre-parse DEVMESH_CONFIG so the config path can come from env".

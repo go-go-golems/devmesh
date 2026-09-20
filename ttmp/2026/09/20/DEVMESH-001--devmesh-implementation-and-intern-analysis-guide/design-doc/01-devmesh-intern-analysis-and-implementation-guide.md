@@ -857,6 +857,13 @@ than a second loader, the file participates in the same provenance chain
 remain framework-owned. The in-process `config.Config` struct still exists as the
 domain representation; `configFromSettings` converts decoded fields into it.
 
+The config-file path itself follows flag > env precedence: `--config` first, then
+`DEVMESH_CONFIG`. Because the config middleware executes before the main env
+source is applied, the path is resolved by a small pre-parse that runs Glazed's
+`FromEnv` against the command schema and decodes the `config` field — so even the
+path lookup stays inside the framework and application code never calls
+`os.Getenv`.
+
 ### 8.3 Environment variables
 
 ```text

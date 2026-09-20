@@ -39,3 +39,11 @@ Migrated devmeshd configuration to Glazed env/config middleware. Removed config.
 
 - /home/manuel/code/wesen/2026-09-20--devmesh/cmd/devmeshd/cmds/serve.go — Glazed section, middleware chain, configFromSettings
 - /home/manuel/code/wesen/2026-09-20--devmesh/internal/config/config.go — Domain config + JSON FileMapper
+
+## 2026-09-20
+
+Added a Glazed-based pre-parse so the daemon config-file path can come from DEVMESH_CONFIG as well as --config (flag > env), without any direct os.Getenv. Unit tests cover env path, flag precedence, and absence; guide 8.2 documents the behavior.
+
+### Related Files
+
+- /home/manuel/code/wesen/2026-09-20--devmesh/cmd/devmeshd/cmds/serve.go — resolveConfigPath pre-parse

@@ -128,3 +128,12 @@ Hardened and verified hosted quality gates: Go 1.26.6, HTTP header limits, scope
 
 - /home/manuel/code/wesen/2026-09-20--devmesh/.github/workflows/lint.yml — Lint scope aligned with maintained packages
 - /home/manuel/code/wesen/2026-09-20--devmesh/security/govulncheck-exceptions.md — Reviewed Docker advisory exception policy
+
+## 2026-09-20
+
+Applied the restrictive Devmesh Vault release roles and proved the split Linux/macOS GoReleaser workflow with the public v0.1.0 release.
+
+### Related Files
+
+- /home/manuel/code/wesen/2026-09-20--devmesh/.github/workflows/release.yaml — Release workflow exercised by v0.1.0
+- /home/manuel/code/wesen/terraform/vault/github-actions/envs/k3s/main.tf — Live builder/publisher role source

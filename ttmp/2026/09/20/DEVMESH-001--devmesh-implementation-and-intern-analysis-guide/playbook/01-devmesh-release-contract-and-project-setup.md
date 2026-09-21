@@ -97,6 +97,8 @@ The first-push TruffleHog case is guarded because GitHub supplies an all-zero pr
 
 The authorization is live as of Terraform commit `ab0d974` in `wesen/terraform`. `AWS_PROFILE=manuel terraform apply /tmp/devmesh-vault-roles.tfplan` created exactly four resources—`gha-release-devmesh-builder`, `gha-release-devmesh-publisher`, `release-devmesh-builder`, and `release-devmesh-publisher`—with no changes or destroys; the immediate subsequent plan reported no changes. This clears the policy prerequisite for the controlled `v0.1.0` release.
 
+The controlled `v0.1.0` release succeeded at [GitHub release v0.1.0](https://github.com/go-go-golems/devmesh/releases/tag/v0.1.0) through run [`35553737420`](https://github.com/go-go-golems/devmesh/actions/runs/35553737420): both split builders and the shared publisher passed. It published Linux and macOS archives, Linux deb/rpm packages, and checksums. The generated Homebrew Cask at `go-go-golems/homebrew-go-go-go/Casks/devmesh.rb` is version `0.1.0` and installs both `devmesh` and `devmeshd`.
+
 
 A version tag matching `v*` starts two independent build jobs:
 

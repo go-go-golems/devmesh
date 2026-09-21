@@ -16,6 +16,8 @@ Owners: []
 RelatedFiles:
     - Path: repo://.github/workflows/dependency-scanning.yml
       Note: Hosted vulnerability and GoSec checks
+    - Path: repo://.github/workflows/lint.yml
+      Note: Hosted lint scope mirrors Makefile and excludes ticket probes
     - Path: repo://.github/workflows/release.yaml
       Note: Split OIDC builder and shared publisher workflow
     - Path: repo://.goreleaser.yaml

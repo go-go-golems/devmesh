@@ -1131,3 +1131,7 @@ Govulncheck now prints the two accepted advisory IDs and their exact reason. It 
 - Local source commit preceding this slice: `82ae119`.
 - Exception policy: `security/govulncheck-exceptions.md`.
 - CI verifier: `scripts/verify_govulncheck.py`.
+
+### Hosted follow-up
+
+The first corrected CI run made secret scanning, dependency scanning, and the main pipeline pass, but the standalone golangci action still defaulted to `./...`. That included the deliberate, ticket-local probe program, while the repository `make lint` contract correctly lints only maintained command, internal, package, integration, and example sources. The task was reopened; the hosted action now receives that same explicit package list. This keeps archived investigative probes compilable while preventing them from silently becoming production lint scope.

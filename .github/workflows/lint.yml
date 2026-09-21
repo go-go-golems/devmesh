@@ -32,4 +32,4 @@ jobs:
         with:
           version: v2.12.2
           install-mode: goinstall
-          args: --timeout=5m
+          args: --timeout=5m ./cmd/... ./internal/... ./pkg/... ./integration/... ./examples/native-go

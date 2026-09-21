@@ -1,0 +1,5 @@
+plugins:
+  - id: devmesh-compose-postgres
+    path: python3
+    args: [./devctl-plugin.py]
+    priority: 10

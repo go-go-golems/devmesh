@@ -109,3 +109,13 @@ Implemented v2 Slice C: prompt active TCP closure on shutdown; fail-fast durable
 - /home/manuel/code/wesen/2026-09-20--devmesh/integration/postgres_test.go — Post-replacement PostgreSQL query acceptance
 - /home/manuel/code/wesen/2026-09-20--devmesh/internal/runtime/service.go — Active proxy admission, closure and worker waiting
 - /home/manuel/code/wesen/2026-09-20--devmesh/internal/state/store.go — Durable state semantics and backup failure handling
+
+## 2026-09-20
+
+Implemented executable CLI-first devctl proof: foreground Compose database labels are registered only by devmesh; a devctl-supervised consumer launcher resolves --raw --wait immediately before exec and injects DATABASE_URL. Isolated devctl validate/plan/up/status/logs/down smoke passed; no devctl core changes.
+
+### Related Files
+
+- /home/manuel/code/wesen/2026-09-20--devmesh/examples/devctl-compose-postgres/devctl-plugin.py — NDJSON plugin returning Compose and consumer services
+- /home/manuel/code/wesen/2026-09-20--devmesh/examples/devctl-compose-postgres/run-consumer.sh — Bounded endpoint resolution and DATABASE_URL injection
+- /home/manuel/code/wesen/2026-09-20--devmesh/ttmp/2026/09/20/DEVMESH-001--devmesh-implementation-and-intern-analysis-guide/analysis/evidence/12-devctl-compose-smoke.txt — Real lifecycle receipt

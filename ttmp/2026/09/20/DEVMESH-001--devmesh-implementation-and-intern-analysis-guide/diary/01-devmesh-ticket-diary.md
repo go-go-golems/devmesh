@@ -951,3 +951,65 @@ New frontend allocation now treats persistence as part of success. If the rememb
 - Slice C task: `zo9w`.
 - Evidence: `analysis/evidence/11-slice-c-review-probes.txt`.
 - The v2 devmesh implementation is complete at the associated commit. The separate devctl integration task remains open.
+
+## Step 18: Implement the CLI-first devctl Compose integration proof
+
+The devmesh core is complete for the focused v2 scope, so I implemented the planned devctl proof without changing devctl itself. The new example is a normal devctl v2 NDJSON plugin: it returns a foreground Docker Compose database service and a consumer service. Devctl owns both child lifetimes. Docker labels make devmeshd’s watcher the only database registration owner. The consumer shell launcher resolves the devmesh endpoint immediately before `exec` and exports `DATABASE_URL`.
+
+This is deliberately not a dependency graph, plugin-held registration, devmesh process wrapper, or native backend-file schema. The consumer’s bounded `resolve --raw --wait` bridges the small startup ordering gap while preserving normal application-level database readiness responsibility.
+
+### Prompt Context
+**User prompt (verbatim):** see Step 15.
+**Assistant interpretation:** Finish the practical devctl integration promised by the focused design after core CLI and lifecycle work was available.
+**Inferred user intent:** Demonstrate a real end-to-end integration using existing devctl orchestration rather than extend devctl’s core model prematurely.
+
+### What I did
+- Added `examples/devctl-compose-postgres/` with `.devctl.yaml`, `devctl-plugin.py`, foreground `compose.yaml`, `run-consumer.sh`, a minimal long-running `consumer.py`, and a runbook README.
+- The plugin implements only `config.mutate`, `validate.run`, and `launch.plan`; stdout remains protocol NDJSON and human output goes to stderr.
+- The consumer launcher invokes `devmesh services resolve devctl.example.postgres --raw --wait 45s`, creates `DATABASE_URL`, logs the resolved stable frontend, then `exec`s its process.
+- Built an isolated devctl binary from `/home/manuel/code/wesen/go-go-golems/devctl`, validated and planned the example, then ran a tmux-backed lifecycle smoke with temporary devmeshd socket/state paths.
+- Removed generated `.devctl` run state after the smoke; only source example files and the ticket evidence receipt remain.
+
+### Why
+- Devctl planning plugins close after plan construction and cannot hold leases. The persistent supervised consumer wrapper owns the shell launcher, so resolution occurs at the correct environment-creation boundary.
+- Docker already supplies correct stable owner metadata through labels. Adding a second devctl registration would create competing cleanup paths.
+
+### What worked
+- `devctl validate` reported `{true [] []}` and `devctl plan` returned two services (`database` foreground Compose and `consumer` shell launcher).
+- The real smoke receipt `analysis/evidence/12-devctl-compose-smoke.txt` shows two ready services, then:
+
+  ```text
+  devctl consumer resolved devctl.example.postgres as 127.0.0.1:15186
+  consumer started with DATABASE_URL=postgres://dev:dev@127.0.0.1:15186/app?sslmode=disable
+  ```
+
+  `devmesh services resolve ... --raw --wait 10s` returned the same stable endpoint, and `devctl down` stopped both devctl-owned services successfully.
+
+### What didn't work
+- The first command attempted `go run /home/manuel/code/wesen/go-go-golems/devctl/cmd/devctl plan` from the devmesh example and Go rejected the external command directory: `directory ../../../go-go-golems/devctl/cmd/devctl outside main module or its selected dependencies`. Built an isolated devctl binary instead.
+- The first plugin validation treated `ctx.repo_root` as the devmesh repository and looked for `examples/devctl-compose-postgres/compose.yaml` beneath the example directory. Devctl supplies the `.devctl.yaml` directory as this example’s root, so changed plugin cwd to `.`. Validation and planning then passed.
+- One first smoke command had a shell-test typo (`[ -S "$SOCK"]`), producing `/bin/bash: line 46: [: missing ']'`; a subsequent clean recorded run passed and is the retained evidence.
+
+### What I learned
+- No devctl schema extension is required for the first useful integration. Existing launch plan commands and inherited environment are sufficient.
+- `resolve --wait` establishes that devmesh has a backend registration, not PostgreSQL readiness; the README says a real consumer retains its normal retry/readiness behavior.
+
+### What was tricky to build
+- Ensuring the example did not imply devctl starts `devmeshd`, owns its socket, or owns Docker registration. The README makes these boundaries explicit.
+
+### What warrants a second pair of eyes
+- The example consumer prints a demo PostgreSQL URL to stderr. It uses fixed public example credentials only; real projects must avoid logging credentials.
+- The example has no consumer HTTP health check because it demonstrates endpoint injection, not a production API topology. Add one only with an actual consumer readiness endpoint.
+
+### What should be done in the future
+- Native wrapper registration remains deferred until a concrete non-self-registering application needs a per-run backend address file.
+- Do not add devctl dependency graphs, transactions, a `devmesh run` wrapper, or a second registry based on this example.
+
+### Code review instructions
+- Read `examples/devctl-compose-postgres/devctl-plugin.py`, `run-consumer.sh`, and the README in that order.
+- Validate with a built devctl binary from the devctl repository, then use the tmux recipe in the README if Docker/local images are available.
+
+### Technical details
+- Task: `dha6`.
+- Evidence: `analysis/evidence/12-devctl-compose-smoke.txt`.
+- No devctl repository files changed; the integration is an executable devmesh example.

@@ -1,0 +1,20 @@
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: dev
+      POSTGRES_PASSWORD: dev
+      POSTGRES_DB: app
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dev -d app"]
+      interval: 1s
+      timeout: 1s
+      retries: 30
+    ports:
+      - "127.0.0.1::5432"
+    labels:
+      io.devmesh.enable: "true"
+      io.devmesh.name: "devctl.example.postgres"
+      io.devmesh.container-port: "5432"
+      io.devmesh.kind: "tcp"
+      io.devmesh.app-protocol: "postgres"

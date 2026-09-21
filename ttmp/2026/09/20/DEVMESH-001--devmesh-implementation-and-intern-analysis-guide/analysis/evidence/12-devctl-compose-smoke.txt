@@ -1,0 +1,23 @@
+=== devctl status ===
+Environment             Services 2   Running 2   Unhealthy 0
+
+SERVICE          DESIRED   STATE      HEALTH      PID     UPTIME
+consumer         running   ready      healthy     668824  8s
+  stdout: /home/manuel/code/wesen/2026-09-20--devmesh/examples/devctl-compose-postgres/.devctl/runs/01a0c174-2795-7947-8c17-59caf90a3f55/stdout.log
+  stderr: /home/manuel/code/wesen/2026-09-20--devmesh/examples/devctl-compose-postgres/.devctl/runs/01a0c174-2795-7947-8c17-59caf90a3f55/stderr.log
+database         running   ready      healthy     668850  8s
+  stdout: /home/manuel/code/wesen/2026-09-20--devmesh/examples/devctl-compose-postgres/.devctl/runs/01a0c174-2796-7697-80ea-ea8632723ace/stdout.log
+  stderr: /home/manuel/code/wesen/2026-09-20--devmesh/examples/devctl-compose-postgres/.devctl/runs/01a0c174-2796-7697-80ea-ea8632723ace/stderr.log
+=== consumer log ===
+00:53:30.432 consumer   stderr  devctl consumer resolved devctl.example.postgres as 127.0.0.1:15186
+00:53:30.520 consumer   stderr  consumer started with DATABASE_URL=postgres://dev:dev@127.0.0.1:15186/app?sslmode=disable
+=== devmesh resolve ===
+127.0.0.1:15186
+
+=== devctl down ===
++--------------------------------------+-----------+-----------+----------+--------------------------------------+--------+--------+---------+------------+-------+-------------+
+| operation_id                         | operation | status    | service  | run_id                               | before | after  | changed | error_code | error | duration_ms |
++--------------------------------------+-----------+-----------+----------+--------------------------------------+--------+--------+---------+------------+-------+-------------+
+| 01a0c174-4614-7932-859a-7441f019dc3d | down      | succeeded | consumer | 01a0c174-2795-7947-8c17-59caf90a3f55 | ready  | exited | true    |            |       | 314         |
+| 01a0c174-4614-7932-859a-7441f019dc3d | down      | succeeded | database | 01a0c174-2796-7697-80ea-ea8632723ace | ready  | exited | true    |            |       | 314         |
++--------------------------------------+-----------+-----------+----------+--------------------------------------+--------+--------+---------+------------+-------+-------------+

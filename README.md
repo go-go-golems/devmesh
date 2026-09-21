@@ -58,6 +58,11 @@ complete URL including a configured non-default port. One hostname belongs to
 one service during a daemon run. Listener frontends stay reserved until daemon
 shutdown; devmesh does not evict inactive listeners automatically.
 
+For a working Compose database → devmesh → devctl consumer example, see
+[`examples/devctl-compose-postgres/`](examples/devctl-compose-postgres/). It
+uses an ordinary devctl plugin and a shell launcher; no devctl core schema or
+second Docker registration path is required.
+
 ## Development
 
 ```bash

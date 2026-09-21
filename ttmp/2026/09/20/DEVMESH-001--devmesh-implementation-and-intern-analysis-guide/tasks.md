@@ -13,4 +13,4 @@
 - [x] V2 Slice B: safe single-target HTTP routing, fixed explicit hosts, truthful startup and URLs through CLI/SDK; no aliases or migration <!-- t:nipk -->
 - [x] V2 Slice C: prompt resource cleanup, fail-fast persistence, cheap safety guards and combined acceptance; stop at supported workflow, defer broad hardening <!-- t:zo9w -->
 - [x] Revise design to focused simplification-first v2 and upload separately without replacing v1 annotations <!-- t:xd3x -->
-- [ ] CLI-first devctl integration after Slice A: reliable foreground register, resolve --raw --wait, and Compose-to-API launcher example; native wrapper fields deferred until a concrete application needs them <!-- t:dha6 -->
+- [x] CLI-first devctl integration after Slice A: reliable foreground register, resolve --raw --wait, and Compose-to-API launcher example; native wrapper fields deferred until a concrete application needs them <!-- t:dha6 -->

@@ -1,3 +1,4 @@
 dist/
 *.state.json
 *.sock
+__pycache__/

@@ -14,6 +14,8 @@ DocType: playbook
 Intent: long-term
 Owners: []
 RelatedFiles:
+    - Path: abs:///home/manuel/code/wesen/terraform/vault/github-actions/envs/k3s/main.tf
+      Note: Terraform source for the live Devmesh builder and publisher roles
     - Path: repo://.github/workflows/dependency-scanning.yml
       Note: Hosted vulnerability and GoSec checks
     - Path: repo://.github/workflows/lint.yml
@@ -92,6 +94,9 @@ CI intentionally does not start Docker or publish a release on ordinary pushes. 
 The first-push TruffleHog case is guarded because GitHub supplies an all-zero previous SHA and the scanner requires two different commits. Later pushes and pull requests scan an explicit before/after or base/head range. The Govulncheck verifier accepts only `GO-2026-4883` and `GO-2026-4887`, two no-fix Docker Engine plugin advisories that Devmesh reaches through its local Docker client dependency; their scope, exposure analysis, and removal condition are recorded in `security/govulncheck-exceptions.md`. Any other reachable advisory fails CI.
 
 ## Release authorization boundary
+
+The authorization is live as of Terraform commit `ab0d974` in `wesen/terraform`. `AWS_PROFILE=manuel terraform apply /tmp/devmesh-vault-roles.tfplan` created exactly four resources—`gha-release-devmesh-builder`, `gha-release-devmesh-publisher`, `release-devmesh-builder`, and `release-devmesh-publisher`—with no changes or destroys; the immediate subsequent plan reported no changes. This clears the policy prerequisite for the controlled `v0.1.0` release.
+
 
 A version tag matching `v*` starts two independent build jobs:
 

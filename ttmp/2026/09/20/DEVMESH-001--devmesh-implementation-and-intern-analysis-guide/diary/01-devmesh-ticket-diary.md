@@ -1135,3 +1135,5 @@ Govulncheck now prints the two accepted advisory IDs and their exact reason. It 
 ### Hosted follow-up
 
 The first corrected CI run made secret scanning, dependency scanning, and the main pipeline pass, but the standalone golangci action still defaulted to `./...`. That included the deliberate, ticket-local probe program, while the repository `make lint` contract correctly lints only maintained command, internal, package, integration, and example sources. The task was reopened; the hosted action now receives that same explicit package list. This keeps archived investigative probes compilable while preventing them from silently becoming production lint scope.
+
+The follow-up commit `af20592` passed every configured GitHub workflow: `golang-pipeline` (run `35553175523`), `golangci-lint` (`35553175587`), `Dependency Scanning` (`35553175498`), `Secret Scanning` (`35553175512`), and `CodeQL Analysis` (`35553175560`). The original full CodeQL analysis of the security implementation (`35552976173`) also passed. This completes the CI-repair task without suppressing production source findings.

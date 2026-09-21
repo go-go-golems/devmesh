@@ -119,3 +119,12 @@ Implemented executable CLI-first devctl proof: foreground Compose database label
 - /home/manuel/code/wesen/2026-09-20--devmesh/examples/devctl-compose-postgres/devctl-plugin.py — NDJSON plugin returning Compose and consumer services
 - /home/manuel/code/wesen/2026-09-20--devmesh/examples/devctl-compose-postgres/run-consumer.sh — Bounded endpoint resolution and DATABASE_URL injection
 - /home/manuel/code/wesen/2026-09-20--devmesh/ttmp/2026/09/20/DEVMESH-001--devmesh-implementation-and-intern-analysis-guide/analysis/evidence/12-devctl-compose-smoke.txt — Real lifecycle receipt
+
+## 2026-09-20
+
+Hardened and verified hosted quality gates: Go 1.26.6, HTTP header limits, scoped lint, reliable secret ranges, GoSec, and narrowly documented Govulncheck exceptions.
+
+### Related Files
+
+- /home/manuel/code/wesen/2026-09-20--devmesh/.github/workflows/lint.yml — Lint scope aligned with maintained packages
+- /home/manuel/code/wesen/2026-09-20--devmesh/security/govulncheck-exceptions.md — Reviewed Docker advisory exception policy

@@ -1,0 +1,115 @@
+?   	github.com/wesen/devmesh/cmd/devmesh	[no test files]
+?   	github.com/wesen/devmesh/cmd/devmesh/cmds	[no test files]
+?   	github.com/wesen/devmesh/cmd/devmesh/cmds/daemonconn	[no test files]
+?   	github.com/wesen/devmesh/cmd/devmesh/cmds/doctor	[no test files]
+?   	github.com/wesen/devmesh/cmd/devmesh/cmds/register	[no test files]
+?   	github.com/wesen/devmesh/cmd/devmesh/cmds/services	[no test files]
+?   	github.com/wesen/devmesh/cmd/devmeshd	[no test files]
+=== RUN   TestResolveConfigPathFromEnv
+--- PASS: TestResolveConfigPathFromEnv (0.00s)
+=== RUN   TestResolveConfigPathFlagWinsOverEnv
+--- PASS: TestResolveConfigPathFlagWinsOverEnv (0.00s)
+=== RUN   TestResolveConfigPathAbsent
+--- PASS: TestResolveConfigPathAbsent (0.00s)
+=== RUN   TestConfigFromSettings
+--- PASS: TestConfigFromSettings (0.00s)
+=== RUN   TestConfigFromSettingsDefaultsSocketAndState
+--- PASS: TestConfigFromSettingsDefaultsSocketAndState (0.00s)
+=== RUN   TestParseDurationFallback
+--- PASS: TestParseDurationFallback (0.00s)
+PASS
+ok  	github.com/wesen/devmesh/cmd/devmeshd/cmds	1.034s
+?   	github.com/wesen/devmesh/examples/native-go	[no test files]
+=== RUN   TestGoClientRegistersAndHeartbeats
+--- PASS: TestGoClientRegistersAndHeartbeats (1.97s)
+=== RUN   TestDockerDiscoveryAndRecreatePreservesFrontend
+--- PASS: TestDockerDiscoveryAndRecreatePreservesFrontend (1.15s)
+=== RUN   TestHTTPProxyRoutesByHost
+--- PASS: TestHTTPProxyRoutesByHost (0.01s)
+=== RUN   TestHTTPSProxyWithExistingCertificate
+--- PASS: TestHTTPSProxyWithExistingCertificate (0.01s)
+=== RUN   TestPostgresThroughFrontend
+--- PASS: TestPostgresThroughFrontend (1.60s)
+=== RUN   TestTCPProxyRoundTripAndLeaseLifecycle
+--- PASS: TestTCPProxyRoundTripAndLeaseLifecycle (0.00s)
+=== RUN   TestBackendReplacementKeepsFrontend
+--- PASS: TestBackendReplacementKeepsFrontend (0.00s)
+=== RUN   TestUnrelatedOwnerConflicts
+--- PASS: TestUnrelatedOwnerConflicts (0.00s)
+PASS
+ok  	github.com/wesen/devmesh/integration	5.758s
+?   	github.com/wesen/devmesh/internal/api	[no test files]
+=== RUN   TestFileMapperFlatKeys
+--- PASS: TestFileMapperFlatKeys (0.00s)
+=== RUN   TestFileMapperNestedDockerAndHTTP
+--- PASS: TestFileMapperNestedDockerAndHTTP (0.00s)
+=== RUN   TestFileMapperNestedDockerWithoutEnabled
+--- PASS: TestFileMapperNestedDockerWithoutEnabled (0.00s)
+=== RUN   TestFileMapperRejectsNonMapping
+--- PASS: TestFileMapperRejectsNonMapping (0.00s)
+PASS
+ok  	github.com/wesen/devmesh/internal/config	1.012s
+=== RUN   TestTLSRequiresBothFiles
+--- PASS: TestTLSRequiresBothFiles (0.00s)
+=== RUN   TestTLSInvalidPairRejected
+--- PASS: TestTLSInvalidPairRejected (0.00s)
+PASS
+ok  	github.com/wesen/devmesh/internal/daemon	1.016s
+=== RUN   TestRegistrationFromInspectLoopback
+--- PASS: TestRegistrationFromInspectLoopback (0.00s)
+=== RUN   TestRegistrationFromInspectRefusesNonLoopback
+--- PASS: TestRegistrationFromInspectRefusesNonLoopback (0.00s)
+=== RUN   TestRegistrationFromInspectNotPublished
+--- PASS: TestRegistrationFromInspectNotPublished (0.00s)
+=== RUN   TestParseLabels
+--- PASS: TestParseLabels (0.00s)
+=== RUN   TestOwnerKeyUsesComposeThenName
+--- PASS: TestOwnerKeyUsesComposeThenName (0.00s)
+=== RUN   TestReconcileRegistersEnabledContainers
+--- PASS: TestReconcileRegistersEnabledContainers (0.00s)
+=== RUN   TestReconcileForgetsDisappearedContainers
+--- PASS: TestReconcileForgetsDisappearedContainers (0.00s)
+PASS
+ok  	github.com/wesen/devmesh/internal/dockerwatch	1.015s
+=== RUN   TestRenewAndDelete
+--- PASS: TestRenewAndDelete (0.00s)
+=== RUN   TestExpiry
+--- PASS: TestExpiry (0.03s)
+=== RUN   TestTokensAreUnique
+--- PASS: TestTokensAreUnique (0.00s)
+PASS
+ok  	github.com/wesen/devmesh/internal/lease	1.046s
+?   	github.com/wesen/devmesh/internal/proxy	[no test files]
+=== RUN   TestValidateName
+--- PASS: TestValidateName (0.00s)
+=== RUN   TestValidateBackend
+--- PASS: TestValidateBackend (0.00s)
+=== RUN   TestOwnershipRules
+--- PASS: TestOwnershipRules (0.00s)
+=== RUN   TestResolveUnknown
+--- PASS: TestResolveUnknown (0.00s)
+PASS
+ok  	github.com/wesen/devmesh/internal/registry	1.011s
+=== RUN   TestAllocatePreferredFree
+--- PASS: TestAllocatePreferredFree (0.01s)
+=== RUN   TestAllocateFallbackWhenPreferredOccupied
+--- PASS: TestAllocateFallbackWhenPreferredOccupied (0.00s)
+=== RUN   TestAllocateReusesRemembered
+--- PASS: TestAllocateReusesRemembered (0.00s)
+=== RUN   TestAllocateExhausted
+--- PASS: TestAllocateExhausted (0.00s)
+=== RUN   TestAllocationsAreDistinct
+--- PASS: TestAllocationsAreDistinct (0.00s)
+PASS
+ok  	github.com/wesen/devmesh/internal/runtime	1.026s
+=== RUN   TestRoundTrip
+--- PASS: TestRoundTrip (0.00s)
+=== RUN   TestCorruptRecovery
+--- PASS: TestCorruptRecovery (0.00s)
+=== RUN   TestFutureVersionRefused
+--- PASS: TestFutureVersionRefused (0.00s)
+PASS
+ok  	github.com/wesen/devmesh/internal/state	1.012s
+?   	github.com/wesen/devmesh/internal/transport	[no test files]
+?   	github.com/wesen/devmesh/pkg/devmesh	[no test files]
+?   	github.com/wesen/devmesh/pkg/doc	[no test files]

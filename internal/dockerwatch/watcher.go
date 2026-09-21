@@ -13,11 +13,24 @@ import (
 	"github.com/docker/docker/api/types/filters"
 )
 
+// dockerCallTimeout bounds each individual Docker API call so a stuck daemon
+// cannot stall reconciliation or event handling indefinitely.
+const dockerCallTimeout = 10 * time.Second
+
+// reconcileInterval is the periodic full-inventory repair pass. Events give
+// prompt updates; the periodic pass repairs anything a missed event (or a
+// snapshot/subscription gap) left behind. A short discovery delay after an
+// event gap is an accepted trade-off instead of replay machinery.
+const reconcileInterval = 5 * time.Second
+
 // Callbacks connect the watcher to the daemon.
 type Callbacks struct {
 	OnRegister func(ctx context.Context, reg Registration) error
-	OnForget   func(ownerKey, name string)
-	OnStatus   func(status string)
+	// OnForget receives the full registration so the daemon can compare the
+	// concrete container identity and ignore stale stop events for a
+	// container that has already been replaced.
+	OnForget func(reg Registration)
+	OnStatus func(status string)
 }
 
 // Watcher reconciles running containers at startup and reacts to lifecycle
@@ -43,7 +56,9 @@ func NewWatcher(api DockerAPI, allowNonLoopback bool, cb Callbacks, logger *slog
 	}
 }
 
-// Run reconciles then consumes events until ctx is canceled.
+// Run reconciles then consumes events until ctx is canceled. A periodic
+// reconciliation pass repairs missed events; the event stream only provides
+// responsiveness.
 func (w *Watcher) Run(ctx context.Context) error {
 	defer func() { _ = w.api.Close() }()
 
@@ -57,16 +72,27 @@ func (w *Watcher) Run(ctx context.Context) error {
 		w.setStatus("connected")
 	}
 
+	reconcileTicker := time.NewTicker(reconcileInterval)
+	defer reconcileTicker.Stop()
+
 	backoff := time.Second
 	for {
 		if ctx.Err() != nil {
 			return nil
 		}
-		err := w.eventLoop(ctx)
+		// eventLoop returns on stream failure, a closed channel, or ctx
+		// cancellation; a periodic tick reconciles in place instead.
+		streamCtx, cancelStream := context.WithCancel(ctx)
+		streamFailed := w.eventLoop(streamCtx, reconcileTicker.C)
+		cancelStream()
 		if ctx.Err() != nil {
 			return nil
 		}
-		w.logger.Warn("docker_disconnected", "error", err)
+		if !streamFailed {
+			// eventLoop exited because ctx was canceled.
+			return nil
+		}
+		w.logger.Warn("docker_disconnected")
 		w.setStatus("degraded")
 
 		select {
@@ -92,6 +118,20 @@ func (w *Watcher) setStatus(status string) {
 	}
 }
 
+// listContainers bounds the Docker list call with its own deadline.
+func (w *Watcher) listContainers(ctx context.Context) ([]container.Summary, error) {
+	cctx, cancel := context.WithTimeout(ctx, dockerCallTimeout)
+	defer cancel()
+	return w.api.ContainerList(cctx, container.ListOptions{})
+}
+
+// inspectContainer bounds the Docker inspect call with its own deadline.
+func (w *Watcher) inspectContainer(ctx context.Context, id string) (container.InspectResponse, error) {
+	cctx, cancel := context.WithTimeout(ctx, dockerCallTimeout)
+	defer cancel()
+	return w.api.ContainerInspect(cctx, id)
+}
+
 func (w *Watcher) reconcileWithRetry(ctx context.Context) error {
 	var err error
 	backoff := 250 * time.Millisecond
@@ -114,25 +154,33 @@ func (w *Watcher) reconcileWithRetry(ctx context.Context) error {
 }
 
 // Reconcile lists running containers, registers devmesh-enabled ones, and
-// forgets previously tracked containers that are gone.
+// forgets previously tracked containers that are gone. A container that is
+// present in the list but fails inspection is not treated as absent: a
+// transient failure must not fabricate disappearance.
 func (w *Watcher) Reconcile(ctx context.Context) error {
-	containers, err := w.api.ContainerList(ctx, container.ListOptions{})
+	containers, err := w.listContainers(ctx)
 	if err != nil {
 		return fmt.Errorf("list containers: %w", err)
 	}
+	// seen contains containers that are still present and devmesh-managed,
+	// regardless of whether registration succeeded this pass.
 	seen := map[string]bool{}
 	for _, c := range containers {
-		if labels, perr := ParseLabels(c.Labels); perr != nil || !labels.Enabled {
+		labels, perr := ParseLabels(c.Labels)
+		if perr != nil {
+			w.logger.Warn("docker_registration_failed", "container_id", c.ID, "error", perr)
 			continue
 		}
-		reg, err := w.registerContainer(ctx, c.ID)
-		if err != nil {
-			w.logger.Warn("docker_registration_failed", "container_id", c.ID, "error", err)
+		if !labels.Enabled {
 			continue
 		}
-		if reg != nil {
-			seen[reg.ContainerID] = true
+		seen[c.ID] = true
+		reg, rerr := w.registerContainer(ctx, c.ID)
+		if rerr != nil {
+			w.logger.Warn("docker_registration_failed", "container_id", c.ID, "error", rerr)
+			continue
 		}
+		_ = reg // registration already tracked in registerContainer
 	}
 
 	// Forget tracked containers that are no longer present.
@@ -151,21 +199,32 @@ func (w *Watcher) Reconcile(ctx context.Context) error {
 	return nil
 }
 
-func (w *Watcher) eventLoop(ctx context.Context) error {
+// eventLoop consumes the event stream until it fails, closes, or ctx is
+// canceled. It returns true when the stream failed and a reconnect is needed.
+// The periodic reconcile ticker is serviced in the same select so missed
+// events are repaired even while the stream is otherwise idle.
+func (w *Watcher) eventLoop(ctx context.Context, ticks <-chan time.Time) bool {
 	msgs, errs := w.api.Events(ctx, events.ListOptions{
 		Filters: filters.NewArgs(filters.Arg("type", "container")),
 	})
 	for {
 		select {
 		case <-ctx.Done():
-			return nil
+			return false
 		case err := <-errs:
 			if err == nil {
-				return errors.New("docker event stream closed")
+				return true
 			}
-			return err
-		case m := <-msgs:
+			return true
+		case m, ok := <-msgs:
+			if !ok {
+				return true
+			}
 			w.handleEvent(ctx, m)
+		case <-ticks:
+			if err := w.Reconcile(ctx); err != nil {
+				w.logger.Warn("docker_reconcile_failed", "error", err)
+			}
 		}
 	}
 }
@@ -205,7 +264,7 @@ func (w *Watcher) registerContainer(ctx context.Context, id string) (*Registrati
 		2 * time.Second,
 	}
 	for attempt := 0; ; attempt++ {
-		inspect, err := w.api.ContainerInspect(ctx, id)
+		inspect, err := w.inspectContainer(ctx, id)
 		if err != nil {
 			return nil, err
 		}
@@ -238,7 +297,7 @@ func (w *Watcher) registerContainer(ctx context.Context, id string) (*Registrati
 
 func (w *Watcher) forget(reg Registration) {
 	if w.cb.OnForget != nil {
-		w.cb.OnForget(reg.OwnerKey, reg.Name)
+		w.cb.OnForget(reg)
 	}
-	w.logger.Info("service_backend_removed", "service", reg.Name, "owner_key", reg.OwnerKey, "source", "docker")
+	w.logger.Info("docker_container_forgotten", "service", reg.Name, "owner_key", reg.OwnerKey, "container_id", reg.ContainerID)
 }

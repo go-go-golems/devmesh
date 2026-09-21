@@ -12,20 +12,22 @@ import (
 // removal is serialized by a single mutex, which is acceptable at local-dev
 // scale and keeps per-name listener ownership unambiguous.
 type Manager struct {
-	mu          sync.Mutex
-	runtimes    map[string]*ServiceRuntime
-	alloc       *Allocator
-	logger      *slog.Logger
-	dialTimeout time.Duration
+	mu              sync.Mutex
+	runtimes        map[string]*ServiceRuntime
+	alloc           *Allocator
+	backendProvider func(name string) *registry.Backend
+	logger          *slog.Logger
+	dialTimeout     time.Duration
 }
 
 // NewManager builds a runtime manager.
-func NewManager(alloc *Allocator, logger *slog.Logger, dialTimeout time.Duration) *Manager {
+func NewManager(alloc *Allocator, backendProvider func(name string) *registry.Backend, logger *slog.Logger, dialTimeout time.Duration) *Manager {
 	return &Manager{
-		runtimes:    map[string]*ServiceRuntime{},
-		alloc:       alloc,
-		logger:      logger,
-		dialTimeout: dialTimeout,
+		runtimes:        map[string]*ServiceRuntime{},
+		alloc:           alloc,
+		backendProvider: backendProvider,
+		logger:          logger,
+		dialTimeout:     dialTimeout,
 	}
 }
 
@@ -41,7 +43,12 @@ func (m *Manager) EnsureTCPRuntime(name string, preferred int) (*ServiceRuntime,
 	if err != nil {
 		return nil, err
 	}
-	rt := NewServiceRuntime(name, registry.Frontend{Host: m.alloc.host, Port: alloc.Port}, alloc.Listener, m.logger, m.dialTimeout)
+	rt := NewServiceRuntime(name, registry.Frontend{Host: m.alloc.host, Port: alloc.Port}, alloc.Listener, func() *registry.Backend {
+		if m.backendProvider == nil {
+			return nil
+		}
+		return m.backendProvider(name)
+	}, m.logger, m.dialTimeout)
 	rt.Start()
 	m.runtimes[name] = rt
 	return rt, nil
@@ -55,67 +62,19 @@ func (m *Manager) Get(name string) (*ServiceRuntime, bool) {
 	return rt, ok
 }
 
-// SetBackend updates the backend of an existing runtime.
-func (m *Manager) SetBackend(name string, b registry.Backend) bool {
-	m.mu.Lock()
-	rt, ok := m.runtimes[name]
-	m.mu.Unlock()
-	if !ok {
-		return false
-	}
-	rt.SetBackend(b)
-	return true
-}
-
-// ClearBackend clears the backend of an existing runtime.
-func (m *Manager) ClearBackend(name string) bool {
-	m.mu.Lock()
-	rt, ok := m.runtimes[name]
-	m.mu.Unlock()
-	if !ok {
-		return false
-	}
-	rt.ClearBackend()
-	return true
-}
-
 // RemoveRuntime closes and removes the runtime for name.
 func (m *Manager) RemoveRuntime(name string) bool {
 	m.mu.Lock()
+	defer m.mu.Unlock()
 	rt, ok := m.runtimes[name]
 	if ok {
 		delete(m.runtimes, name)
 	}
-	m.mu.Unlock()
 	if !ok {
 		return false
 	}
 	_ = rt.Close()
 	return true
-}
-
-// Reap closes runtimes that have been idle longer than ttl and returns their
-// names. Remembered port assignments are retained by the state store.
-func (m *Manager) Reap(ttl time.Duration) []string {
-	m.mu.Lock()
-	var victims []*ServiceRuntime
-	var names []string
-	for name, rt := range m.runtimes {
-		if rt.CurrentBackend() != nil {
-			continue
-		}
-		if rt.Idle(ttl) {
-			victims = append(victims, rt)
-			names = append(names, name)
-			delete(m.runtimes, name)
-		}
-	}
-	m.mu.Unlock()
-	for _, rt := range victims {
-		m.logger.Info("runtime_reaped", "service", rt.Name)
-		_ = rt.Close()
-	}
-	return names
 }
 
 // CloseAll closes every runtime.

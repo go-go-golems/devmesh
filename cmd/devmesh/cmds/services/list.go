@@ -80,7 +80,7 @@ func (c *ListCommand) RunIntoGlazeProcessor(ctx context.Context, parsed *values.
 			types.MRP("kind", svc.Kind),
 			types.MRP("app_protocol", svc.AppProtocol),
 			types.MRP("status", svc.Status),
-			types.MRP("endpoint", Endpoint(svc.Frontend.Host, svc.Frontend.Port)),
+			types.MRP("endpoint", EndpointOf(svc.Frontend)),
 		)); err != nil {
 			return err
 		}
@@ -94,4 +94,14 @@ func Endpoint(host string, port int) string {
 		return ""
 	}
 	return net.JoinHostPort(host, strconv.Itoa(port))
+}
+
+// EndpointOf is the one endpoint formatter used by every command: it prefers
+// the complete URL (HTTP services, including nondefault ports) and falls back
+// to host:port for TCP frontends.
+func EndpointOf(f api.FrontendDTO) string {
+	if f.URL != "" {
+		return f.URL
+	}
+	return Endpoint(f.Host, f.Port)
 }

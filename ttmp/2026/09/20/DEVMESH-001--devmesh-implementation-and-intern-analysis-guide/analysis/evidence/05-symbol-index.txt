@@ -1,0 +1,122 @@
+internal/dockerwatch/inspect.go:13:type Registration struct {
+internal/dockerwatch/inspect.go:27:type ErrNotPublished struct {
+internal/dockerwatch/inspect.go:32:func (e *ErrNotPublished) Error() string {
+internal/dockerwatch/inspect.go:37:type ErrNonLoopback struct {
+internal/dockerwatch/inspect.go:43:func (e *ErrNonLoopback) Error() string {
+internal/dockerwatch/inspect.go:50:func RegistrationFromInspect(inspect container.InspectResponse, allowNonLoopback bool) (Registration, error) {
+internal/dockerwatch/inspect.go:120:type binding struct {
+internal/dockerwatch/inspect.go:125:func isLoopbackIP(host string) bool {
+pkg/devmesh/client.go:16:type Handle interface {
+pkg/devmesh/client.go:21:type registrationHandle struct {
+pkg/devmesh/client.go:39:func Register(ctx context.Context, opts RegistrationOptions) (Handle, error) {
+pkg/devmesh/client.go:87:func (h *registrationHandle) register(ctx context.Context) error {
+pkg/devmesh/client.go:105:func (h *registrationHandle) heartbeatLoop(ctx context.Context) {
+pkg/devmesh/client.go:154:func (h *registrationHandle) Endpoint() string {
+pkg/devmesh/client.go:161:func (h *registrationHandle) Close() error {
+pkg/devmesh/client.go:186:func asTransportError(err error, target **transport.Error) bool {
+internal/dockerwatch/watcher.go:17:type Callbacks struct {
+internal/dockerwatch/watcher.go:25:type Watcher struct {
+internal/dockerwatch/watcher.go:36:func NewWatcher(api DockerAPI, allowNonLoopback bool, cb Callbacks, logger *slog.Logger) *Watcher {
+internal/dockerwatch/watcher.go:47:func (w *Watcher) Run(ctx context.Context) error {
+internal/dockerwatch/watcher.go:89:func (w *Watcher) setStatus(status string) {
+internal/dockerwatch/watcher.go:95:func (w *Watcher) reconcileWithRetry(ctx context.Context) error {
+internal/dockerwatch/watcher.go:118:func (w *Watcher) Reconcile(ctx context.Context) error {
+internal/dockerwatch/watcher.go:154:func (w *Watcher) eventLoop(ctx context.Context) error {
+internal/dockerwatch/watcher.go:173:func (w *Watcher) handleEvent(ctx context.Context, m events.Message) {
+internal/dockerwatch/watcher.go:197:func (w *Watcher) registerContainer(ctx context.Context, id string) (*Registration, error) {
+internal/dockerwatch/watcher.go:239:func (w *Watcher) forget(reg Registration) {
+internal/lease/manager.go:21:type Entry struct {
+internal/lease/manager.go:30:type Manager struct {
+internal/lease/manager.go:37:func NewManager(ttl time.Duration) *Manager {
+internal/lease/manager.go:45:func (m *Manager) TTL() time.Duration { return m.ttl }
+internal/lease/manager.go:48:func NewToken() (string, error) {
+internal/lease/manager.go:57:func (m *Manager) Add(id, name, ownerKey, token string) Entry {
+internal/lease/manager.go:62:func (m *Manager) AddWithTTL(id, name, ownerKey, token string, ttl time.Duration) Entry {
+internal/lease/manager.go:80:func (m *Manager) Renew(id, token string) (time.Time, error) {
+internal/lease/manager.go:95:func (m *Manager) Delete(id, token string) error {
+internal/lease/manager.go:110:func (m *Manager) Remove(id string) {
+internal/lease/manager.go:117:func (m *Manager) Get(id string) (Entry, bool) {
+internal/lease/manager.go:128:func (m *Manager) Expired(now time.Time) []Entry {
+internal/lease/manager.go:141:func (m *Manager) Len() int {
+internal/lease/manager.go:147:func tokenEqual(a, b string) bool {
+internal/runtime/manager.go:14:type Manager struct {
+internal/runtime/manager.go:23:func NewManager(alloc *Allocator, logger *slog.Logger, dialTimeout time.Duration) *Manager {
+internal/runtime/manager.go:34:func (m *Manager) EnsureTCPRuntime(name string, preferred int) (*ServiceRuntime, error) {
+internal/runtime/manager.go:51:func (m *Manager) Get(name string) (*ServiceRuntime, bool) {
+internal/runtime/manager.go:59:func (m *Manager) SetBackend(name string, b registry.Backend) bool {
+internal/runtime/manager.go:71:func (m *Manager) ClearBackend(name string) bool {
+internal/runtime/manager.go:83:func (m *Manager) RemoveRuntime(name string) bool {
+internal/runtime/manager.go:99:func (m *Manager) Reap(ttl time.Duration) []string {
+internal/runtime/manager.go:122:func (m *Manager) CloseAll() {
+internal/runtime/manager.go:136:func (m *Manager) Names() []string {
+internal/runtime/service.go:17:type ServiceRuntime struct {
+internal/runtime/service.go:34:func NewServiceRuntime(name string, frontend registry.Frontend, ln net.Listener, logger *slog.Logger, dialTimeout time.Duration) *ServiceRuntime {
+internal/runtime/service.go:49:func (rt *ServiceRuntime) Start() {
+internal/runtime/service.go:53:func (rt *ServiceRuntime) acceptLoop() {
+internal/runtime/service.go:87:func (rt *ServiceRuntime) SetBackend(b registry.Backend) {
+internal/runtime/service.go:93:func (rt *ServiceRuntime) ClearBackend() {
+internal/runtime/service.go:99:func (rt *ServiceRuntime) CurrentBackend() *registry.Backend {
+internal/runtime/service.go:108:func (rt *ServiceRuntime) Endpoint() string { return rt.Frontend.Addr() }
+internal/runtime/service.go:111:func (rt *ServiceRuntime) Listener() net.Listener { return rt.listener }
+internal/runtime/service.go:114:func (rt *ServiceRuntime) Touch() { rt.lastActive.Store(time.Now().UnixNano()) }
+internal/runtime/service.go:117:func (rt *ServiceRuntime) LastActive() time.Time {
+internal/runtime/service.go:122:func (rt *ServiceRuntime) Idle(ttl time.Duration) bool {
+internal/runtime/service.go:127:func (rt *ServiceRuntime) Close() error {
+internal/daemon/daemon.go:33:type Daemon struct {
+internal/daemon/daemon.go:53:func New(cfg config.Config, logger *slog.Logger) (*Daemon, error) {
+internal/daemon/daemon.go:85:func (d *Daemon) loadTLS() error {
+internal/daemon/daemon.go:102:func (d *Daemon) TLSCertificate() *tls.Certificate { return d.tlsCert }
+internal/daemon/daemon.go:105:func (d *Daemon) Config() config.Config { return d.cfg }
+internal/daemon/daemon.go:108:func (d *Daemon) Logger() *slog.Logger { return d.logger }
+internal/daemon/daemon.go:111:func (d *Daemon) StartedAt() time.Time { return d.startedAt }
+internal/daemon/daemon.go:114:func (d *Daemon) Start(ctx context.Context) {
+internal/daemon/daemon.go:197:func (d *Daemon) StartDockerWatcher(ctx context.Context) {
+internal/daemon/daemon.go:236:func (d *Daemon) sweepLeases(now time.Time) {
+internal/daemon/daemon.go:248:func (d *Daemon) Shutdown(ctx context.Context) error {
+internal/daemon/daemon.go:271:type RegisterParams struct {
+internal/daemon/daemon.go:286:type RegisterResult struct {
+internal/daemon/daemon.go:296:func (d *Daemon) Register(p RegisterParams) (RegisterResult, error) {
+internal/daemon/daemon.go:302:func (d *Daemon) registerLocked(p RegisterParams) (RegisterResult, error) {
+internal/daemon/daemon.go:405:func frontendLabel(f registry.Frontend) string {
+internal/daemon/daemon.go:413:func (d *Daemon) Heartbeat(id, token string) (time.Time, error) {
+internal/daemon/daemon.go:426:func (d *Daemon) DeleteRegistration(id, token string) error {
+internal/daemon/daemon.go:447:func (d *Daemon) ForgetByOwner(ownerKey, name string) {
+internal/daemon/daemon.go:456:type ServiceInfo struct {
+internal/daemon/daemon.go:469:func infoFromRecord(rec registry.ServiceRecord, includeBackend bool) ServiceInfo {
+internal/daemon/daemon.go:489:func (d *Daemon) List() []ServiceInfo {
+internal/daemon/daemon.go:499:func (d *Daemon) Resolve(name string) (ServiceInfo, error) {
+internal/daemon/daemon.go:508:func (d *Daemon) Inspect(name string) (ServiceInfo, error) {
+internal/daemon/daemon.go:517:func (d *Daemon) SetDockerStatus(status string) { d.dockerStatus.Store(status) }
+internal/daemon/daemon.go:520:func (d *Daemon) DockerStatus() string {
+internal/daemon/daemon.go:527:func (d *Daemon) CheckFrontendRange() error {
+internal/registry/registry.go:11:type Registry struct {
+internal/registry/registry.go:17:func New() *Registry {
+internal/registry/registry.go:24:func (r *Registry) CheckOwnership(name, ownerKey string) error {
+internal/registry/registry.go:37:func (r *Registry) CreateOrReplaceOwned(rec ServiceRecord) (ServiceRecord, error) {
+internal/registry/registry.go:56:func (r *Registry) SetBackend(name, ownerKey string, b Backend) bool {
+internal/registry/registry.go:72:func (r *Registry) MarkUnavailable(ownerKey string) bool {
+internal/registry/registry.go:89:func (r *Registry) Remove(ownerKey string) bool {
+internal/registry/registry.go:102:func (r *Registry) Resolve(name string) (ServiceRecord, bool) {
+internal/registry/registry.go:113:func (r *Registry) List() []ServiceRecord {
+internal/registry/registry.go:125:func (r *Registry) Len() int {
+internal/proxy/http.go:16:type BackendProvider func() *registry.Backend
+internal/proxy/http.go:20:type Router struct {
+internal/proxy/http.go:27:type httpProxy struct {
+internal/proxy/http.go:35:func NewRouter(scheme string, logger *slog.Logger) *Router {
+internal/proxy/http.go:43:func (r *Router) Set(hostname string, provider BackendProvider) {
+internal/proxy/http.go:68:func (r *Router) Delete(hostname string) {
+internal/proxy/http.go:75:func (r *Router) Lookup(hostname string) (BackendProvider, bool) {
+internal/proxy/http.go:86:func (r *Router) FrontendURL(hostname string) string {
+internal/proxy/http.go:91:func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+internal/proxy/http.go:107:func normalizeHost(host string) string {
+internal/transport/unix.go:18:func DefaultSocketPath() string {
+internal/transport/unix.go:29:func Listen(socketPath string) (net.Listener, error) {
+internal/transport/unix.go:57:func RemoveSocket(socketPath string) {
+internal/state/store.go:13:type Store struct {
+internal/state/store.go:21:func Load(path string) (*Store, error) {
+internal/state/store.go:53:func (s *Store) Port(name string) int {
+internal/state/store.go:60:func (s *Store) SetPort(name string, port int) error {
+internal/state/store.go:71:func (s *Store) Forget(name string) error {
+internal/state/store.go:82:func (s *Store) Snapshot() map[string]int {
+internal/state/store.go:93:func (s *Store) Save() error {
+internal/state/store.go:99:func (s *Store) saveLocked() error {

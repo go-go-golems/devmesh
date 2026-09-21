@@ -30,20 +30,15 @@ func httpGet(t *testing.T, addr, host string) (int, string) {
 	return resp.StatusCode, string(body)
 }
 
-func registerHTTP(t *testing.T, h *harness, name, host, backendAddr, owner string) {
+func registerHTTP(t *testing.T, h *harness, name, host, backendAddr string) api.RegisterResponse {
 	t.Helper()
 	bd := backendDTO(t, backendAddr)
-	req := api.RegisterRequest{
-		Name:     name,
-		Kind:     "http",
-		Source:   "manual",
-		OwnerKey: owner,
-		Backend:  bd,
-		HTTPHost: host,
-	}
-	if err := h.client.Do(context.Background(), "POST", "/v1/registrations", req, &api.RegisterResponse{}); err != nil {
+	req := api.RegisterRequest{Name: name, Kind: "http", Source: "manual", Backend: bd, HTTPHost: host}
+	var resp api.RegisterResponse
+	if err := h.client.Do(context.Background(), "POST", "/v1/registrations", req, &resp); err != nil {
 		t.Fatalf("register http %s: %v", name, err)
 	}
+	return resp
 }
 
 func TestHTTPProxyRoutesByHost(t *testing.T) {
@@ -58,8 +53,8 @@ func TestHTTPProxyRoutesByHost(t *testing.T) {
 	}))
 	defer backendB.Close()
 
-	registerHTTP(t, h, "checkout.api", "api-checkout.test", strings.TrimPrefix(backendA.URL, "http://"), "manual:api")
-	registerHTTP(t, h, "checkout.web", "web-checkout.test", strings.TrimPrefix(backendB.URL, "http://"), "manual:web")
+	apiReg := registerHTTP(t, h, "checkout.api", "api-checkout.test", strings.TrimPrefix(backendA.URL, "http://"))
+	registerHTTP(t, h, "checkout.web", "web-checkout.test", strings.TrimPrefix(backendB.URL, "http://"))
 
 	// The HTTP proxy listener starts asynchronously; retry until it accepts.
 	deadline := time.Now().Add(5 * time.Second)
@@ -84,15 +79,10 @@ func TestHTTPProxyRoutesByHost(t *testing.T) {
 		t.Fatalf("unknown host: code=%d, want 404", code)
 	}
 
-	// Mark the API service unavailable and expect 503, not a stale backend.
-	infos := h.d.List()
-	var ownerKey string
-	for _, info := range infos {
-		if info.Name == "checkout.api" {
-			ownerKey = info.OwnerKey
-		}
+	// Delete the API registration and expect 503, not a stale backend.
+	if err := h.client.DoAuth(context.Background(), "DELETE", "/v1/registrations/"+apiReg.RegistrationID, apiReg.LeaseToken, nil, nil); err != nil {
+		t.Fatalf("delete api registration: %v", err)
 	}
-	h.d.ForgetByOwner(ownerKey, "checkout.api")
 	if code, _ := httpGet(t, h.httpAddr, "api-checkout.test"); code != http.StatusServiceUnavailable {
 		t.Fatalf("unavailable host: code=%d, want 503", code)
 	}

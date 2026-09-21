@@ -23,7 +23,12 @@ type Entry struct {
 	Name           string
 	OwnerKey       string
 	Token          string
-	ExpiresAt      time.Time
+	// TTL is the effective duration for this entry. It is set from the
+	// registration request (or the daemon default) and is used both for the
+	// initial expiry and for every renewal, so a requested TTL stays in force
+	// across heartbeats.
+	TTL       time.Duration
+	ExpiresAt time.Time
 }
 
 // Manager tracks leased registrations in memory.
@@ -70,13 +75,16 @@ func (m *Manager) AddWithTTL(id, name, ownerKey, token string, ttl time.Duration
 		Name:           name,
 		OwnerKey:       ownerKey,
 		Token:          token,
+		TTL:            ttl,
 		ExpiresAt:      time.Now().Add(ttl),
 	}
 	m.entries[id] = e
 	return *e
 }
 
-// Renew extends a lease after verifying the token.
+// Renew extends a lease after verifying the token. Renewal uses the entry's
+// effective TTL and fails once the lease has reached its expiry, so an expired
+// registration cannot be resurrected; the client must register anew.
 func (m *Manager) Renew(id, token string) (time.Time, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -84,10 +92,16 @@ func (m *Manager) Renew(id, token string) (time.Time, error) {
 	if !ok {
 		return time.Time{}, ErrNotFound
 	}
+	now := time.Now()
+	if !now.Before(e.ExpiresAt) {
+		// Expired but not yet swept: treat exactly like a missing registration.
+		delete(m.entries, id)
+		return time.Time{}, ErrNotFound
+	}
 	if !tokenEqual(e.Token, token) {
 		return time.Time{}, ErrUnauthorized
 	}
-	e.ExpiresAt = time.Now().Add(m.ttl)
+	e.ExpiresAt = now.Add(e.TTL)
 	return e.ExpiresAt, nil
 }
 
@@ -124,14 +138,32 @@ func (m *Manager) Get(id string) (Entry, bool) {
 	return *e, true
 }
 
-// Expired returns copies of entries whose lease has elapsed.
+// Expired returns copies of entries whose lease has elapsed without removing
+// them. Prefer TakeExpired for expiry handling: it selects and removes under
+// one lock so a lease cannot be renewed between selection and removal.
 func (m *Manager) Expired(now time.Time) []Entry {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	var out []Entry
 	for _, e := range m.entries {
-		if now.After(e.ExpiresAt) {
+		if !now.Before(e.ExpiresAt) {
 			out = append(out, *e)
+		}
+	}
+	return out
+}
+
+// TakeExpired removes and returns the entries whose leases have elapsed. The
+// select-and-delete happens under one lock, so an expired entry can never be
+// renewed after (or concurrently with) being taken by the sweeper.
+func (m *Manager) TakeExpired(now time.Time) []Entry {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var out []Entry
+	for id, e := range m.entries {
+		if !now.Before(e.ExpiresAt) {
+			out = append(out, *e)
+			delete(m.entries, id)
 		}
 	}
 	return out

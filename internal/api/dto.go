@@ -37,6 +37,7 @@ type InspectDTO struct {
 	Backend           *BackendDTO `json:"backend,omitempty"`
 	Source            string      `json:"source,omitempty"`
 	OwnerKey          string      `json:"owner_key,omitempty"`
+	ProducerID        string      `json:"producer_id,omitempty"`
 	DockerContainerID string      `json:"docker_container_id,omitempty"`
 	Hostname          string      `json:"hostname,omitempty"`
 }
@@ -53,19 +54,18 @@ type HealthResponse struct {
 	Docker  string `json:"docker"`
 }
 
-// RegisterRequest is the POST /v1/registrations body.
+// RegisterRequest is the POST /v1/registrations body. Producer identity
+// (owner key, registration ID, container ID) is daemon-issued and must not be
+// supplied by callers; unknown fields are rejected by the JSON decoder.
 type RegisterRequest struct {
-	Name              string     `json:"name"`
-	Kind              string     `json:"kind,omitempty"`
-	AppProtocol       string     `json:"app_protocol,omitempty"`
-	Source            string     `json:"source,omitempty"`
-	Backend           BackendDTO `json:"backend"`
-	PreferredPort     int        `json:"preferred_port,omitempty"`
-	TTLSeconds        int        `json:"ttl_seconds,omitempty"`
-	OwnerKey          string     `json:"owner_key,omitempty"`
-	RegistrationID    string     `json:"registration_id,omitempty"`
-	DockerContainerID string     `json:"docker_container_id,omitempty"`
-	HTTPHost          string     `json:"http_host,omitempty"`
+	Name          string     `json:"name"`
+	Kind          string     `json:"kind,omitempty"`
+	AppProtocol   string     `json:"app_protocol,omitempty"`
+	Source        string     `json:"source,omitempty"`
+	Backend       BackendDTO `json:"backend"`
+	PreferredPort int        `json:"preferred_port,omitempty"`
+	TTLSeconds    int        `json:"ttl_seconds,omitempty"`
+	HTTPHost      string     `json:"http_host,omitempty"`
 }
 
 // RegisterResponse is the POST /v1/registrations response.
@@ -75,6 +75,7 @@ type RegisterResponse struct {
 	Name           string      `json:"name"`
 	Frontend       FrontendDTO `json:"frontend"`
 	ExpiresAt      string      `json:"expires_at,omitempty"`
+	TTLSeconds     int         `json:"ttl_seconds,omitempty"`
 }
 
 // HeartbeatResponse is the heartbeat response.
@@ -105,6 +106,7 @@ func inspectDTO(info daemon.ServiceInfo) InspectDTO {
 		Frontend:          frontendDTO(info.Frontend),
 		Source:            string(info.Source),
 		OwnerKey:          info.OwnerKey,
+		ProducerID:        info.ProducerID,
 		DockerContainerID: info.DockerContainerID,
 		Hostname:          info.Hostname,
 	}

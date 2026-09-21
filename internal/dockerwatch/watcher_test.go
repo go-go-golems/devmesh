@@ -48,10 +48,10 @@ func TestReconcileForgetsDisappearedContainers(t *testing.T) {
 	api.containers = []container.Summary{summaryFor("abc123", enabledLabels())}
 	api.byID["abc123"] = inspectWith(enabledLabels(), "127.0.0.1", "49173")
 
-	var forgotten []string
+	var forgotten []Registration
 	cb := Callbacks{
 		OnRegister: func(context.Context, Registration) error { return nil },
-		OnForget:   func(ownerKey, name string) { forgotten = append(forgotten, name) },
+		OnForget:   func(reg Registration) { forgotten = append(forgotten, reg) },
 	}
 	w := NewWatcher(api, false, cb, testLogger())
 	if err := w.Reconcile(context.Background()); err != nil {
@@ -66,8 +66,8 @@ func TestReconcileForgetsDisappearedContainers(t *testing.T) {
 	if err := w.Reconcile(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	if len(forgotten) != 1 || forgotten[0] != "checkout.postgres" {
-		t.Fatalf("forgotten = %v, want [checkout.postgres]", forgotten)
+	if len(forgotten) != 1 || forgotten[0].Name != "checkout.postgres" || forgotten[0].ContainerID != "abc123" {
+		t.Fatalf("forgotten = %+v, want the full registration for checkout.postgres", forgotten)
 	}
 	if len(w.tracked) != 0 {
 		t.Fatalf("still tracking %d containers", len(w.tracked))

@@ -7,7 +7,6 @@ func TestFileMapperFlatKeys(t *testing.T) {
 		"socket":            "/tmp/x.sock",
 		"tcp_frontend_min":  16000,
 		"tcp_frontend_max":  16999,
-		"runtime_idle_ttl":  "3m",
 		"lease_ttl":         "20s",
 		"shutdown_timeout":  "2s",
 		"state_path":        "/tmp/state.json",
@@ -22,7 +21,6 @@ func TestFileMapperFlatKeys(t *testing.T) {
 		"socket":            "/tmp/x.sock",
 		"tcp-frontend-min":  16000,
 		"tcp-frontend-max":  16999,
-		"runtime-idle-ttl":  "3m",
 		"lease-ttl":         "20s",
 		"shutdown-timeout":  "2s",
 		"state":             "/tmp/state.json",
@@ -32,6 +30,15 @@ func TestFileMapperFlatKeys(t *testing.T) {
 		if sec[k] != v {
 			t.Errorf("field %s = %v, want %v", k, sec[k], v)
 		}
+	}
+}
+
+func TestFileMapperRejectsRemovedIdleTTL(t *testing.T) {
+	// runtime_idle_ttl was removed when automatic runtime reaping was
+	// dropped; supplying it must produce a migration error, not silence.
+	_, err := FileMapper(map[string]any{"runtime_idle_ttl": "10m"})
+	if err == nil {
+		t.Fatal("removed runtime_idle_ttl key accepted silently")
 	}
 }
 

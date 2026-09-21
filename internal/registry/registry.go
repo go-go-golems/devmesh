@@ -67,22 +67,35 @@ func (r *Registry) SetBackend(name, ownerKey string, b Backend) bool {
 	return true
 }
 
-// MarkUnavailable clears the backend for the owner's service and marks it
-// unavailable, retaining the frontend and remembered port.
-func (r *Registry) MarkUnavailable(ownerKey string) bool {
+// ClearBackendIf marks the named service unavailable when producerID still
+// identifies the current publication. A removal for a replaced producer is a
+// no-op and returns false, so stale events and old leases cannot disable a
+// newer backend. The frontend assignment is retained.
+func (r *Registry) ClearBackendIf(name, producerID string) bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	for name, rec := range r.services {
-		if rec.OwnerKey != ownerKey {
-			continue
-		}
-		rec.Backend = nil
-		rec.Status = StatusUnavailable
-		rec.UpdatedAt = time.Now()
-		r.services[name] = rec
-		return true
+	rec, ok := r.services[name]
+	if !ok || rec.ProducerID != producerID {
+		return false
 	}
-	return false
+	rec.Backend = nil
+	rec.Status = StatusUnavailable
+	rec.UpdatedAt = time.Now()
+	r.services[name] = rec
+	return true
+}
+
+// FindByHostname returns the service currently claiming the canonical hostname.
+// It is used to keep one HTTP route owner per hostname.
+func (r *Registry) FindByHostname(hostname string) (ServiceRecord, bool) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	for _, rec := range r.services {
+		if rec.Hostname == hostname {
+			return rec.Clone(), true
+		}
+	}
+	return ServiceRecord{}, false
 }
 
 // Remove deletes a record owned by ownerKey.

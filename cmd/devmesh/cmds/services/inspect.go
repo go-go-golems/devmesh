@@ -70,10 +70,11 @@ func (c *InspectCommand) RunIntoGlazeProcessor(ctx context.Context, parsed *valu
 		types.MRP("name", svc.Name),
 		types.MRP("kind", svc.Kind),
 		types.MRP("status", svc.Status),
-		types.MRP("frontend", Endpoint(svc.Frontend.Host, svc.Frontend.Port)),
+		types.MRP("frontend", EndpointOf(svc.Frontend)),
 		types.MRP("backend", backend),
 		types.MRP("source", svc.Source),
 		types.MRP("owner_key", svc.OwnerKey),
+		types.MRP("producer_id", svc.ProducerID),
 		types.MRP("docker_container_id", svc.DockerContainerID),
 	))
 }

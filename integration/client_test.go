@@ -13,7 +13,7 @@ import (
 // TestGoClientRegistersAndHeartbeats verifies the public Go client binds a
 // backend, keeps its lease alive, and cleans up on Close.
 func TestGoClientRegistersAndHeartbeats(t *testing.T) {
-	h := startHarness(t, time.Second)
+	h := startHarness(t, 3*time.Second)
 
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -40,7 +40,7 @@ func TestGoClientRegistersAndHeartbeats(t *testing.T) {
 		Kind:       devmesh.KindTCP,
 		Backend:    ln.Addr().String(),
 		Socket:     h.socket,
-		TTLSeconds: 1,
+		TTLSeconds: 3,
 	})
 	if err != nil {
 		t.Fatalf("Register: %v", err)
@@ -51,7 +51,7 @@ func TestGoClientRegistersAndHeartbeats(t *testing.T) {
 	}
 
 	// Wait longer than the TTL so that only heartbeats keep it alive.
-	time.Sleep(1800 * time.Millisecond)
+	time.Sleep(4500 * time.Millisecond)
 	var svc api.ServiceDTO
 	if err := h.client.Do(context.Background(), "GET", "/v1/services/client.svc", nil, &svc); err != nil {
 		t.Fatalf("resolve after TTL: %v", err)

@@ -34,7 +34,7 @@ func TestValidateBackend(t *testing.T) {
 
 func TestOwnershipRules(t *testing.T) {
 	r := New()
-	rec := ServiceRecord{Name: "checkout.postgres", OwnerKey: "docker:checkout:db:5432", Kind: KindTCP, Status: StatusReady}
+	rec := ServiceRecord{Name: "checkout.postgres", OwnerKey: "docker:checkout:db:5432", ProducerID: "abc123", Kind: KindTCP, Status: StatusReady}
 	if _, err := r.CreateOrReplaceOwned(rec); err != nil {
 		t.Fatalf("first registration failed: %v", err)
 	}
@@ -62,13 +62,24 @@ func TestOwnershipRules(t *testing.T) {
 		t.Fatalf("CheckOwnership rejected true owner: %v", err)
 	}
 
-	// MarkUnavailable keeps the frontend but clears the backend.
-	if !r.MarkUnavailable("docker:checkout:db:5432") {
-		t.Fatal("MarkUnavailable returned false")
+	// ClearBackendIf keeps the frontend but clears the backend only for the
+	// current producer.
+	if r.ClearBackendIf("checkout.postgres", "stale-container") {
+		t.Fatal("stale producer removal cleared the backend")
+	}
+	got, _ = r.Resolve("checkout.postgres")
+	if got.Status != StatusReady {
+		t.Fatalf("stale removal changed status: %+v", got)
+	}
+	if !r.ClearBackendIf("checkout.postgres", "abc123") {
+		t.Fatal("ClearBackendIf rejected the current producer")
 	}
 	got, _ = r.Resolve("checkout.postgres")
 	if got.Status != StatusUnavailable || got.Backend != nil {
-		t.Fatalf("MarkUnavailable state wrong: %+v", got)
+		t.Fatalf("ClearBackendIf state wrong: %+v", got)
+	}
+	if got.Frontend != rec.Frontend {
+		t.Fatalf("frontend not retained: %+v", got.Frontend)
 	}
 }
 

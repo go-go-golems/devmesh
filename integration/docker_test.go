@@ -148,30 +148,44 @@ func TestDockerDiscoveryAndRecreatePreservesFrontend(t *testing.T) {
 		t.Fatalf("owner key = %q", inspect.OwnerKey)
 	}
 
-	// Recreate the container with the same logical owner key (same Compose
-	// project/service). Remove the old one first so ownership is unambiguous.
-	rmctx, rmcancel := context.WithTimeout(context.Background(), 30*time.Second)
-	_ = dapi.ContainerRemove(rmctx, firstID, container.RemoveOptions{Force: true, RemoveVolumes: true})
-	rmcancel()
-	createPostgres(t, dapi, "devmesh-it", "db", name)
-	// Force the watcher to reconcile promptly by waiting for a backend change.
+	// Start the replacement before removing the old container. This is the
+	// ordering that used to fail: B registers under the same logical owner, then
+	// A's delayed destroy event cleared B. Conditional container identity must
+	// now keep B current.
+	secondID := createPostgres(t, dapi, "devmesh-it", "db", name)
 	deadline := time.Now().Add(45 * time.Second)
 	var second api.InspectDTO
 	for time.Now().Before(deadline) {
 		if err := h.client.Do(context.Background(), "GET", "/v1/services/"+name+"/inspect", nil, &second); err == nil {
-			if second.Backend != nil && second.Backend.Port != firstBackend.Port {
+			if second.Backend != nil && second.Backend.Port != firstBackend.Port && second.DockerContainerID == secondID {
 				break
 			}
 		}
 		time.Sleep(250 * time.Millisecond)
 	}
-	if second.Backend == nil {
-		t.Fatal("no backend after recreate")
+	if second.Backend == nil || second.DockerContainerID != secondID {
+		t.Fatalf("replacement not current: %+v", second)
 	}
-	if second.Frontend.Port != svc.Frontend.Port {
-		t.Fatalf("frontend changed on recreate: %d -> %d", svc.Frontend.Port, second.Frontend.Port)
+
+	rmctx, rmcancel := context.WithTimeout(context.Background(), 30*time.Second)
+	_ = dapi.ContainerRemove(rmctx, firstID, container.RemoveOptions{Force: true, RemoveVolumes: true})
+	rmcancel()
+	// Give the old container's terminal event/reconcile path time to run. It
+	// must not clear the replacement's backend.
+	time.Sleep(500 * time.Millisecond)
+	var afterOldRemoval api.InspectDTO
+	if err := h.client.Do(context.Background(), "GET", "/v1/services/"+name+"/inspect", nil, &afterOldRemoval); err != nil {
+		t.Fatal(err)
 	}
-	if second.Backend.Port == firstBackend.Port {
-		t.Fatalf("backend did not change on recreate (still %d)", firstBackend.Port)
+	if afterOldRemoval.Status != "ready" || afterOldRemoval.DockerContainerID != secondID || afterOldRemoval.Backend == nil {
+		t.Fatalf("old removal displaced replacement: %+v", afterOldRemoval)
 	}
+	if afterOldRemoval.Frontend.Port != svc.Frontend.Port {
+		t.Fatalf("frontend changed on recreate: %d -> %d", svc.Frontend.Port, afterOldRemoval.Frontend.Port)
+	}
+	conn, err = net.DialTimeout("tcp", frontend, 3*time.Second)
+	if err != nil {
+		t.Fatalf("dial frontend after old removal %s: %v", frontend, err)
+	}
+	_ = conn.Close()
 }

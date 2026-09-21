@@ -1,0 +1,14 @@
+P13 occupied HTTP listener: health=[200, {"status": "ok", "version": "0.1.0", "docker": "disabled"}] process_alive=True
+P14 public Docker-source registration: status=201 token_present=False expiry_present=False
+P15 HTTP registration URL=http://web.test configured_listener=127.0.0.1:58255
+P16 CLI HTTP resolution=[
+{
+  "endpoint": "",
+  "kind": "http",
+  "name": "web.review",
+  "status": "ready"
+}
+]
+P17 copy inspected owner without token: status=201 new_backend=49901
+Control SIGTERM: exit=0 socket_removed=True
+Listener failure diagnostic: time=2026-09-20T16:55:37.991-04:00 level=WARN msg=http_proxy_listen_failed addr=127.0.0.1:58255 error="listen tcp 127.0.0.1:58255: bind: address already in use"

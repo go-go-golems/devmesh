@@ -42,6 +42,8 @@ Key artifacts:
 - `design-doc/01-devmesh-intern-analysis-and-implementation-guide.md` — primary
   deliverable.
 - `diary/01-devmesh-ticket-diary.md` — work history.
+- [Implementation review and focused simplification design v2](analysis/01-implementation-review-and-hardening-design-for-a-new-intern.md) — authoritative next implementation scope: three bounded slices, simplification first, explicit deferrals, and a concrete stopping point. Includes evidence references at `5fbf70c`.
+- [Archived v1 review](archive/01-implementation-review-v1.md) — detailed historical findings; its eight-phase roadmap is superseded, not an additional backlog.
 
 ## Key Links
 
@@ -50,7 +52,7 @@ Key artifacts:
 
 ## Status
 
-Current status: **active**
+Current status: **active**. Implement the three focused v2 slices, not the superseded eight-phase hardening plan. Prioritize supported workflows and remove duplicated state/lifecycle logic; elaborate rare-edge-case machinery is explicitly deferred. Review probes and evidence remain under `scripts/` and `analysis/evidence/`. No production fixes have been implemented as part of the review or v2 revision.
 
 ## Topics
 

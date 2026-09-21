@@ -5,6 +5,7 @@ package cmds
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -66,7 +67,6 @@ func NewServeCommand() *ServeCommand {
 			fields.New("tcp-frontend-host", fields.TypeString, fields.WithDefault(d.TCPFrontendHost), fields.WithHelp("Frontend bind host")),
 			fields.New("tcp-frontend-min", fields.TypeInteger, fields.WithDefault(d.TCPFrontendMin), fields.WithHelp("Lowest stable frontend port")),
 			fields.New("tcp-frontend-max", fields.TypeInteger, fields.WithDefault(d.TCPFrontendMax), fields.WithHelp("Highest stable frontend port")),
-			fields.New("runtime-idle-ttl", fields.TypeString, fields.WithDefault(d.RuntimeIdleTTL.String()), fields.WithHelp("Idle grace before a backendless runtime is closed")),
 			fields.New("lease-ttl", fields.TypeString, fields.WithDefault(d.LeaseTTL.String()), fields.WithHelp("Default lease TTL")),
 			fields.New("shutdown-timeout", fields.TypeString, fields.WithDefault(d.ShutdownTimeout.String()), fields.WithHelp("Graceful shutdown timeout")),
 			fields.New("state", fields.TypeString, fields.WithHelp("State file path")),
@@ -143,7 +143,13 @@ func (c *ServeCommand) Run(ctx context.Context, parsed *values.Values) error {
 		return err
 	}
 
-	cfg := configFromSettings(settings)
+	cfg, err := configFromSettings(settings)
+	if err != nil {
+		return err
+	}
+	if err := cfg.Validate(); err != nil {
+		return err
+	}
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
 
 	d, err := daemon.New(cfg, logger)
@@ -185,16 +191,25 @@ func (c *ServeCommand) Run(ctx context.Context, parsed *values.Values) error {
 }
 
 // configFromSettings converts decoded Glazed fields into the domain config.
-func configFromSettings(s *ServeSettings) config.Config {
+// Malformed duration values are rejected rather than silently replaced with
+// defaults.
+func configFromSettings(s *ServeSettings) (config.Config, error) {
 	def := config.Default()
+	leaseTTL, err := parseDuration(s.LeaseTTL, def.LeaseTTL)
+	if err != nil {
+		return config.Config{}, fmt.Errorf("lease-ttl: %w", err)
+	}
+	shutdownTimeout, err := parseDuration(s.ShutdownTimeout, def.ShutdownTimeout)
+	if err != nil {
+		return config.Config{}, fmt.Errorf("shutdown-timeout: %w", err)
+	}
 	cfg := config.Config{
 		Socket:          s.Socket,
 		TCPFrontendHost: s.TCPFrontendHost,
 		TCPFrontendMin:  s.TCPFrontendMin,
 		TCPFrontendMax:  s.TCPFrontendMax,
-		RuntimeIdleTTL:  parseDuration(s.RuntimeIdleTTL, def.RuntimeIdleTTL),
-		LeaseTTL:        parseDuration(s.LeaseTTL, def.LeaseTTL),
-		ShutdownTimeout: parseDuration(s.ShutdownTimeout, def.ShutdownTimeout),
+		LeaseTTL:        leaseTTL,
+		ShutdownTimeout: shutdownTimeout,
 		StatePath:       s.StatePath,
 		Docker: config.DockerConfig{
 			Enabled:                        s.DockerEnabled,
@@ -215,16 +230,16 @@ func configFromSettings(s *ServeSettings) config.Config {
 	if cfg.StatePath == "" {
 		cfg.StatePath = config.DefaultStatePath()
 	}
-	return cfg
+	return cfg, nil
 }
 
-func parseDuration(s string, def time.Duration) time.Duration {
+func parseDuration(s string, def time.Duration) (time.Duration, error) {
 	if s == "" {
-		return def
+		return def, nil
 	}
 	d, err := time.ParseDuration(s)
 	if err != nil {
-		return def
+		return 0, fmt.Errorf("invalid duration %q: %w", s, err)
 	}
-	return d
+	return d, nil
 }

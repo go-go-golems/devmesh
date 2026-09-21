@@ -1,0 +1,12 @@
+P01 old lease DELETE after replacement: status=ready stale_delete_rejected=true (desired ready/true)
+P02 stale foreign forget: registry=ready runtime_backend_nil=false (desired false)
+P03 Docker reconcile replacement: container=new status=ready (desired ready)
+P04 duplicate HTTP host accepted: backend_port=49201 (desired conflict on second registration)
+P05 HTTP host change: hostname=new.test advertised_url=http://same.test (desired agreement and configured port)
+P06 requested TTL=60s: initial~60s renewed~60s (desired 60s)
+P07 atomic expiry take: taken=1 renew_rejected=true leases=0 (desired 1/true/0)
+P08 mixed loopback+wildcard publication accepted=true (desired refusal)
+P09 preexisting regular file replaced with socket=true (desired refusal)
+P10 backend disappears between provider calls: status=200 body=UNINTENDED (desired 503, never caller URL)
+P11 allocation after persistence failure: success=true disk_missing=true same_value_retry_error=<nil>
+P12 established TCP after daemon Shutdown: read_error=<nil> payload=b (desired closed after drain deadline)

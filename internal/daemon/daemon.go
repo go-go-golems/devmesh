@@ -49,8 +49,11 @@ type Daemon struct {
 	tlsCert      *tls.Certificate
 }
 
-// New builds a daemon from config. It loads persistent state.
+// New builds a daemon from validated config. It loads persistent state.
 func New(cfg config.Config, logger *slog.Logger) (*Daemon, error) {
+	if err := cfg.Validate(); err != nil {
+		return nil, err
+	}
 	if cfg.StatePath == "" {
 		cfg.StatePath = config.DefaultStatePath()
 	}
@@ -68,7 +71,13 @@ func New(cfg config.Config, logger *slog.Logger) (*Daemon, error) {
 		startedAt: time.Now(),
 	}
 	alloc := runtime.NewAllocator(cfg.TCPFrontendHost, cfg.TCPFrontendMin, cfg.TCPFrontendMax, st, logger)
-	d.Runtime = runtime.NewManager(alloc, logger, 3*time.Second)
+	d.Runtime = runtime.NewManager(alloc, func(name string) *registry.Backend {
+		rec, ok := d.Registry.Resolve(name)
+		if !ok || rec.Status != registry.StatusReady || rec.Backend == nil {
+			return nil
+		}
+		return rec.Backend
+	}, logger, 3*time.Second)
 	d.dockerStatus.Store("disabled")
 	if cfg.Docker.Enabled {
 		d.dockerStatus.Store("degraded")
@@ -130,21 +139,6 @@ func (d *Daemon) Start(ctx context.Context) {
 		}
 	}()
 
-	d.wg.Add(1)
-	go func() {
-		defer d.wg.Done()
-		ticker := time.NewTicker(30 * time.Second)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-ticker.C:
-				d.Runtime.Reap(d.cfg.RuntimeIdleTTL)
-			}
-		}
-	}()
-
 	if d.cfg.HTTP.Enabled {
 		d.wg.Add(1)
 		go func() {
@@ -191,21 +185,11 @@ func (d *Daemon) Start(ctx context.Context) {
 	d.StartDockerWatcher(ctx)
 }
 
-// StartDockerWatcher launches the Docker adapter when enabled. Docker being
-// unavailable only degrades the Docker status; the rest of devmesh keeps
-// running.
-func (d *Daemon) StartDockerWatcher(ctx context.Context) {
-	if !d.cfg.Docker.Enabled {
-		d.SetDockerStatus("disabled")
-		return
-	}
-	api, err := dockerwatch.NewClient()
-	if err != nil {
-		d.logger.Warn("docker_connect_failed", "error", err)
-		d.SetDockerStatus("degraded")
-		return
-	}
-	cb := dockerwatch.Callbacks{
+// DockerCallbacks returns the callback wiring that connects a Docker watcher
+// to this daemon. It is extracted so tests can drive a fake watcher against a
+// real daemon without a Docker daemon.
+func (d *Daemon) DockerCallbacks() dockerwatch.Callbacks {
+	return dockerwatch.Callbacks{
 		OnRegister: func(ctx context.Context, reg dockerwatch.Registration) error {
 			_, rerr := d.Register(RegisterParams{
 				Name:              reg.Name,
@@ -220,10 +204,28 @@ func (d *Daemon) StartDockerWatcher(ctx context.Context) {
 			})
 			return rerr
 		},
-		OnForget: func(ownerKey, name string) { d.ForgetByOwner(ownerKey, name) },
+		OnForget: func(reg dockerwatch.Registration) {
+			d.ForgetDockerPublication(reg.Name, reg.OwnerKey, reg.ContainerID)
+		},
 		OnStatus: d.SetDockerStatus,
 	}
-	w := dockerwatch.NewWatcher(api, d.cfg.Docker.AllowNonLoopbackPublishedPorts, cb, d.logger)
+}
+
+// StartDockerWatcher launches the Docker adapter when enabled. Docker being
+// unavailable only degrades the Docker status; the rest of devmesh keeps
+// running.
+func (d *Daemon) StartDockerWatcher(ctx context.Context) {
+	if !d.cfg.Docker.Enabled {
+		d.SetDockerStatus("disabled")
+		return
+	}
+	api, err := dockerwatch.NewClient()
+	if err != nil {
+		d.logger.Warn("docker_connect_failed", "error", err)
+		d.SetDockerStatus("degraded")
+		return
+	}
+	w := dockerwatch.NewWatcher(api, d.cfg.Docker.AllowNonLoopbackPublishedPorts, d.DockerCallbacks(), d.logger)
 	d.wg.Add(1)
 	go func() {
 		defer d.wg.Done()
@@ -234,14 +236,23 @@ func (d *Daemon) StartDockerWatcher(ctx context.Context) {
 }
 
 func (d *Daemon) sweepLeases(now time.Time) {
-	for _, e := range d.Lease.Expired(now) {
-		d.Lease.Remove(e.RegistrationID)
-		d.mutate.Lock()
-		d.Registry.MarkUnavailable(e.OwnerKey)
-		d.Runtime.ClearBackend(e.Name)
-		d.mutate.Unlock()
-		d.logger.Info("lease_expired", "service", e.Name, "registration_id", e.RegistrationID)
+	for _, e := range d.Lease.TakeExpired(now) {
+		if d.endPublication(e.Name, e.RegistrationID) {
+			d.logger.Info("lease_expired", "service", e.Name, "registration_id", e.RegistrationID)
+		} else {
+			d.logger.Info("stale_lease_expired", "service", e.Name, "registration_id", e.RegistrationID)
+		}
 	}
+}
+
+// endPublication clears the current backend only when producerID still
+// identifies the installed publication. Stale removals (an old lease or a
+// container that has been replaced) are ignored, which is the core protection
+// for backend replacement. The frontend stays reserved.
+func (d *Daemon) endPublication(name, producerID string) bool {
+	d.mutate.Lock()
+	defer d.mutate.Unlock()
+	return d.Registry.ClearBackendIf(name, producerID)
 }
 
 // Shutdown stops background work, closes runtimes, and flushes state.
@@ -289,6 +300,9 @@ type RegisterResult struct {
 	Name           string
 	Frontend       registry.Frontend
 	ExpiresAt      *time.Time
+	// TTLSeconds is the effective lease duration for process/manual sources.
+	// Clients use it to schedule renewal instead of assuming a default.
+	TTLSeconds int
 }
 
 // Register validates and applies a backend, allocating a TCP frontend or an
@@ -317,6 +331,15 @@ func (d *Daemon) registerLocked(p RegisterParams) (RegisterResult, error) {
 	if source == "" {
 		source = registry.SourceProcess
 	}
+	// Validate the effective lease before allocating a listener or mutating the
+	// registry. A rejected TTL must leave no dormant record behind.
+	ttl := d.cfg.LeaseTTL
+	if source != registry.SourceDocker && p.TTLSeconds > 0 {
+		ttl = time.Duration(p.TTLSeconds) * time.Second
+	}
+	if source != registry.SourceDocker && (ttl < config.MinLeaseTTL || ttl > config.MaxLeaseTTL) {
+		return RegisterResult{}, errf(CodeInvalidRequest, "ttl_seconds must be between %d and %d", int(config.MinLeaseTTL.Seconds()), int(config.MaxLeaseTTL.Seconds()))
+	}
 	regID := p.RegistrationID
 	if regID == "" {
 		regID = newID()
@@ -325,8 +348,25 @@ func (d *Daemon) registerLocked(p RegisterParams) (RegisterResult, error) {
 	if ownerKey == "" {
 		ownerKey = string(source) + ":" + regID
 	}
+	// The producer ID identifies the concrete publication: the registration ID
+	// for process/manual sources, the container ID for Docker. It is what
+	// removals must match to take effect.
+	producerID := regID
+	if source == registry.SourceDocker {
+		if p.DockerContainerID == "" {
+			return RegisterResult{}, errf(CodeInvalidRequest, "docker registrations require a container id")
+		}
+		producerID = p.DockerContainerID
+	}
 	if err := d.Registry.CheckOwnership(p.Name, ownerKey); err != nil {
 		return RegisterResult{}, errf(CodeNameConflict, "%s", err)
+	}
+	// A same-owner replacement retires the previous publication's lease so a
+	// stale registration cannot be renewed or deleted against the new backend.
+	if existing, ok := d.Registry.Resolve(p.Name); ok &&
+		existing.OwnerKey == ownerKey && existing.ProducerID != producerID &&
+		(existing.Source == registry.SourceProcess || existing.Source == registry.SourceManual) {
+		d.Lease.Remove(existing.ProducerID)
 	}
 
 	res := RegisterResult{RegistrationID: regID, Name: p.Name}
@@ -336,6 +376,7 @@ func (d *Daemon) registerLocked(p RegisterParams) (RegisterResult, error) {
 		Kind:              kind,
 		AppProtocol:       p.AppProtocol,
 		OwnerKey:          ownerKey,
+		ProducerID:        producerID,
 		Source:            source,
 		Backend:           &p.Backend,
 		Status:            registry.StatusReady,
@@ -375,8 +416,6 @@ func (d *Daemon) registerLocked(p RegisterParams) (RegisterResult, error) {
 			}
 			return r.Backend
 		})
-	} else {
-		d.Runtime.SetBackend(p.Name, p.Backend)
 	}
 	res.Frontend = rec.Frontend
 
@@ -390,13 +429,10 @@ func (d *Daemon) registerLocked(p RegisterParams) (RegisterResult, error) {
 	if err != nil {
 		return RegisterResult{}, errf(CodeInternal, "generate lease token: %s", err)
 	}
-	ttl := d.cfg.LeaseTTL
-	if p.TTLSeconds > 0 {
-		ttl = time.Duration(p.TTLSeconds) * time.Second
-	}
 	entry := d.Lease.AddWithTTL(regID, p.Name, ownerKey, token, ttl)
 	res.LeaseToken = token
 	res.ExpiresAt = &entry.ExpiresAt
+	res.TTLSeconds = int(ttl.Seconds())
 
 	d.logger.Info("service_registered", "service", p.Name, "source", source, "backend", p.Backend.Addr(), "frontend", frontendLabel(rec.Frontend))
 	return res, nil
@@ -421,8 +457,9 @@ func (d *Daemon) Heartbeat(id, token string) (time.Time, error) {
 	return exp, nil
 }
 
-// DeleteRegistration removes a leased registration, keeping the frontend
-// reserved but marking the service unavailable.
+// DeleteRegistration removes a leased registration. The service backend is
+// cleared only when this registration still identifies the current
+// publication; deleting a replaced registration leaves the replacement ready.
 func (d *Daemon) DeleteRegistration(id, token string) error {
 	e, ok := d.Lease.Get(id)
 	if !ok {
@@ -434,22 +471,23 @@ func (d *Daemon) DeleteRegistration(id, token string) error {
 		}
 		return errf(CodeRegistrationNotFound, "registration %s is unknown", id)
 	}
-	d.mutate.Lock()
-	d.Registry.MarkUnavailable(e.OwnerKey)
-	d.Runtime.ClearBackend(e.Name)
-	d.mutate.Unlock()
-	d.logger.Info("service_backend_removed", "service", e.Name, "registration_id", id)
+	if d.endPublication(e.Name, e.RegistrationID) {
+		d.logger.Info("service_backend_removed", "service", e.Name, "registration_id", id)
+	} else {
+		d.logger.Info("stale_registration_deleted", "service", e.Name, "registration_id", id)
+	}
 	return nil
 }
 
-// ForgetByOwner marks a service unavailable (used by the Docker watcher on
-// container stop/destroy).
-func (d *Daemon) ForgetByOwner(ownerKey, name string) {
-	d.mutate.Lock()
-	d.Registry.MarkUnavailable(ownerKey)
-	d.Runtime.ClearBackend(name)
-	d.mutate.Unlock()
-	d.logger.Info("service_backend_removed", "service", name, "owner_key", ownerKey, "source", registry.SourceDocker)
+// ForgetDockerPublication clears a Docker-registered service when the named
+// container still owns the current publication. A stop event for a container
+// that has been recreated is a no-op.
+func (d *Daemon) ForgetDockerPublication(name, ownerKey, containerID string) {
+	if d.endPublication(name, containerID) {
+		d.logger.Info("service_backend_removed", "service", name, "owner_key", ownerKey, "source", registry.SourceDocker, "container_id", containerID)
+	} else {
+		d.logger.Info("stale_docker_forget_ignored", "service", name, "owner_key", ownerKey, "container_id", containerID)
+	}
 }
 
 // ServiceInfo is the API-facing projection of a service.
@@ -462,6 +500,7 @@ type ServiceInfo struct {
 	Backend           *registry.Backend
 	Source            registry.Source
 	OwnerKey          string
+	ProducerID        string
 	DockerContainerID string
 	Hostname          string
 }
@@ -475,6 +514,7 @@ func infoFromRecord(rec registry.ServiceRecord, includeBackend bool) ServiceInfo
 		Frontend:          rec.Frontend,
 		Source:            rec.Source,
 		OwnerKey:          rec.OwnerKey,
+		ProducerID:        rec.ProducerID,
 		DockerContainerID: rec.DockerContainerID,
 		Hostname:          rec.Hostname,
 	}

@@ -30,6 +30,8 @@ WhenToUse: ""
 
 # Devmesh intern analysis and implementation guide
 
+> **Current implementation scope — v2:** This is the original architecture/onboarding guide. For the next implementation cycle, follow [Implementation review and focused simplification design v2](../analysis/01-implementation-review-and-hardening-design-for-a-new-intern.md). Its three bounded slices supersede the broader hardening roadmap and deliberately defer automatic hostname generation, idle runtime reaping, configurable graceful draining, event replay machinery, and rare-edge-case infrastructure. Keep this guide for concepts and historical requirements; do not treat every proposed feature below as a release blocker.
+
 This document is the reading companion to the imported source specification
 `devmesh-implementation-guide.md` (see `../sources/devmesh-implementation-guide.md`).
 The source guide is the *what* and the *contract*. This document is the *why*,

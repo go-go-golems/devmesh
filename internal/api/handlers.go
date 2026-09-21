@@ -59,23 +59,23 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 	if source == "" {
 		source = registry.SourceProcess
 	}
-	if source != registry.SourceProcess && source != registry.SourceManual && source != registry.SourceDocker {
-		writeError(w, s.logger, &daemon.Error{Code: daemon.CodeInvalidRequest, Message: fmt.Sprintf("unknown source %q", req.Source)})
+	// The docker source is reserved for the trusted in-process watcher, which
+	// supplies producer identity (container ID). The public API cannot claim it:
+	// docker registrations carry no lease and would never be cleaned up.
+	if source != registry.SourceProcess && source != registry.SourceManual {
+		writeError(w, s.logger, &daemon.Error{Code: daemon.CodeInvalidRequest, Message: fmt.Sprintf("source %q is not supported; use process or manual", req.Source)})
 		return
 	}
 	kind := registry.Kind(req.Kind)
 	res, err := s.d.Register(daemon.RegisterParams{
-		Name:              req.Name,
-		Kind:              kind,
-		AppProtocol:       req.AppProtocol,
-		Backend:           registry.Backend{Host: req.Backend.Host, Port: req.Backend.Port},
-		PreferredPort:     req.PreferredPort,
-		TTLSeconds:        req.TTLSeconds,
-		Source:            source,
-		OwnerKey:          req.OwnerKey,
-		RegistrationID:    req.RegistrationID,
-		DockerContainerID: req.DockerContainerID,
-		HTTPHost:          req.HTTPHost,
+		Name:          req.Name,
+		Kind:          kind,
+		AppProtocol:   req.AppProtocol,
+		Backend:       registry.Backend{Host: req.Backend.Host, Port: req.Backend.Port},
+		PreferredPort: req.PreferredPort,
+		TTLSeconds:    req.TTLSeconds,
+		Source:        source,
+		HTTPHost:      req.HTTPHost,
 	})
 	if err != nil {
 		writeError(w, s.logger, err)
@@ -86,6 +86,7 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 		LeaseToken:     res.LeaseToken,
 		Name:           res.Name,
 		Frontend:       frontendDTO(res.Frontend),
+		TTLSeconds:     res.TTLSeconds,
 	}
 	if res.ExpiresAt != nil {
 		resp.ExpiresAt = res.ExpiresAt.UTC().Format(time.RFC3339)

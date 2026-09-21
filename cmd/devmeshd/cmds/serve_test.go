@@ -5,6 +5,8 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+
+	"github.com/wesen/devmesh/internal/config"
 )
 
 func TestResolveConfigPathFromEnv(t *testing.T) {
@@ -61,7 +63,6 @@ func TestConfigFromSettings(t *testing.T) {
 		TCPFrontendHost:                      "127.0.0.1",
 		TCPFrontendMin:                       16000,
 		TCPFrontendMax:                       16099,
-		RuntimeIdleTTL:                       "2m",
 		LeaseTTL:                             "9s",
 		ShutdownTimeout:                      "3s",
 		StatePath:                            "/tmp/state.json",
@@ -74,14 +75,17 @@ func TestConfigFromSettings(t *testing.T) {
 		HTTPCertFile:                         "/certs/cert.pem",
 		HTTPKeyFile:                          "/certs/key.pem",
 	}
-	cfg := configFromSettings(s)
+	cfg, err := configFromSettings(s)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if cfg.Socket != "/tmp/x.sock" || cfg.StatePath != "/tmp/state.json" {
 		t.Fatalf("paths not mapped: %+v", cfg)
 	}
 	if cfg.TCPFrontendMin != 16000 || cfg.TCPFrontendMax != 16099 {
 		t.Fatalf("range not mapped: %+v", cfg)
 	}
-	if cfg.RuntimeIdleTTL != 2*time.Minute || cfg.LeaseTTL != 9*time.Second || cfg.ShutdownTimeout != 3*time.Second {
+	if cfg.LeaseTTL != 9*time.Second || cfg.ShutdownTimeout != 3*time.Second {
 		t.Fatalf("durations not mapped: %+v", cfg)
 	}
 	if !cfg.Docker.Enabled || !cfg.Docker.AllowNonLoopbackPublishedPorts {
@@ -92,8 +96,40 @@ func TestConfigFromSettings(t *testing.T) {
 	}
 }
 
+func TestConfigFromSettingsRejectsMalformedDuration(t *testing.T) {
+	s := &ServeSettings{LeaseTTL: "bogus", ShutdownTimeout: "3s"}
+	if _, err := configFromSettings(s); err == nil {
+		t.Fatal("malformed lease-ttl accepted")
+	}
+	s = &ServeSettings{ShutdownTimeout: "bogus"}
+	if _, err := configFromSettings(s); err == nil {
+		t.Fatal("malformed shutdown-timeout accepted")
+	}
+}
+
+func TestConfigValidateRejectsBadRange(t *testing.T) {
+	cfg := config.Default()
+	cfg.TCPFrontendMin = 20000
+	cfg.TCPFrontendMax = 19999
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("inverted port range accepted")
+	}
+	cfg = config.Default()
+	cfg.LeaseTTL = time.Second
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("short lease ttl accepted")
+	}
+	cfg = config.Default()
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("default config rejected: %v", err)
+	}
+}
+
 func TestConfigFromSettingsDefaultsSocketAndState(t *testing.T) {
-	cfg := configFromSettings(&ServeSettings{TCPFrontendHost: "127.0.0.1", TCPFrontendMin: 1, TCPFrontendMax: 2})
+	cfg, err := configFromSettings(&ServeSettings{TCPFrontendHost: "127.0.0.1", TCPFrontendMin: 1, TCPFrontendMax: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
 	if cfg.Socket == "" {
 		t.Fatal("socket default not applied")
 	}
@@ -102,14 +138,14 @@ func TestConfigFromSettingsDefaultsSocketAndState(t *testing.T) {
 	}
 }
 
-func TestParseDurationFallback(t *testing.T) {
-	if got := parseDuration("", 5*time.Second); got != 5*time.Second {
-		t.Fatalf("empty = %v", got)
+func TestParseDurationStrict(t *testing.T) {
+	if got, err := parseDuration("", 5*time.Second); err != nil || got != 5*time.Second {
+		t.Fatalf("empty = %v, %v", got, err)
 	}
-	if got := parseDuration("bogus", 5*time.Second); got != 5*time.Second {
-		t.Fatalf("bogus = %v", got)
+	if _, err := parseDuration("bogus", 5*time.Second); err == nil {
+		t.Fatal("bogus accepted")
 	}
-	if got := parseDuration("2s", time.Second); got != 2*time.Second {
-		t.Fatalf("2s = %v", got)
+	if got, err := parseDuration("2s", time.Second); err != nil || got != 2*time.Second {
+		t.Fatalf("2s = %v, %v", got, err)
 	}
 }

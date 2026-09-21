@@ -65,7 +65,7 @@ func TestHTTPSProxyWithExistingCertificate(t *testing.T) {
 		io.WriteString(w, "TLS")
 	}))
 	defer backend.Close()
-	registerHTTP(t, h, "checkout.api", "api-checkout.test", strings.TrimPrefix(backend.URL, "http://"), "manual:tls")
+	registerHTTP(t, h, "checkout.api", "api-checkout.test", strings.TrimPrefix(backend.URL, "http://"))
 
 	client := &http.Client{
 		Timeout:   3 * time.Second,

@@ -1,0 +1,19 @@
+# Tasks
+
+## TODO
+- [x] Create ticket and import devmesh-implementation-guide.md into sources/ <!-- t:2w30 -->
+- [x] Write intern analysis/design/implementation guide (design-doc) <!-- t:olmw -->
+- [x] Define CLI and help system on the Glazed framework in the guide <!-- t:boae -->
+- [x] Relate source/docs and validate with docmgr doctor <!-- t:dtef -->
+- [x] Upload guide to reMarkable <!-- t:vjq7 -->
+- [x] Implement devmesh PR plan (TCP MVP, Docker, HTTP proxy, TLS) <!-- t:un7e -->
+- [x] Review implementation against brief and diary, reproduce lifecycle defects, and author intern-facing assessment <!-- t:i609 -->
+- [x] Upload implementation review and improvement design to reMarkable <!-- t:tjtv -->
+- [ ] Phase 1: publication identity and conditional removal correctness (review F01-F02) <!-- t:7eh2 -->
+- [ ] Phase 2: public registration authority and negotiated atomic leases (F02-F03-F05) <!-- t:mccl -->
+- [ ] Phase 3: safe HTTP target selection and hostname ownership (F04-F06) <!-- t:90e8 -->
+- [ ] Phase 4: truthful HTTP/TLS startup, URLs, SDK and CLI (F07) <!-- t:jxqy -->
+- [ ] Phase 5: Docker snapshot/event convergence and publication safety (F08-F09) <!-- t:jrmh -->
+- [ ] Phase 6: coordinated reaping, bounded connection shutdown and Unix path safety (F09-F10) <!-- t:5q9h -->
+- [ ] Phase 7: durability failure policy, config validation and effective diagnostics (F11-F12) <!-- t:ufbc -->
+- [ ] Phase 8: combined PostgreSQL/restart/TLS acceptance and documentation reconciliation <!-- t:ov44 -->

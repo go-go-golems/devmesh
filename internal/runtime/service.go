@@ -18,30 +18,29 @@ type ServiceRuntime struct {
 	Name     string
 	Frontend registry.Frontend
 
-	listener    net.Listener
-	backend     atomic.Pointer[registry.Backend]
-	logger      *slog.Logger
-	dialTimeout time.Duration
-	sem         chan struct{}
-	closed      atomic.Bool
-	closeOnce   sync.Once
-	done        chan struct{}
-	lastActive  atomic.Int64
+	listener        net.Listener
+	backendProvider func() *registry.Backend
+	logger          *slog.Logger
+	dialTimeout     time.Duration
+	sem             chan struct{}
+	closed          atomic.Bool
+	closeOnce       sync.Once
+	done            chan struct{}
 }
 
 // NewServiceRuntime builds a runtime with a bound listener. It does not start
 // accepting until Start is called.
-func NewServiceRuntime(name string, frontend registry.Frontend, ln net.Listener, logger *slog.Logger, dialTimeout time.Duration) *ServiceRuntime {
+func NewServiceRuntime(name string, frontend registry.Frontend, ln net.Listener, backendProvider func() *registry.Backend, logger *slog.Logger, dialTimeout time.Duration) *ServiceRuntime {
 	rt := &ServiceRuntime{
-		Name:        name,
-		Frontend:    frontend,
-		listener:    ln,
-		logger:      logger.With("service", name),
-		dialTimeout: dialTimeout,
-		sem:         make(chan struct{}, 4096),
-		done:        make(chan struct{}),
+		Name:            name,
+		Frontend:        frontend,
+		listener:        ln,
+		backendProvider: backendProvider,
+		logger:          logger.With("service", name),
+		dialTimeout:     dialTimeout,
+		sem:             make(chan struct{}, 4096),
+		done:            make(chan struct{}),
 	}
-	rt.Touch()
 	return rt
 }
 
@@ -83,25 +82,19 @@ func (rt *ServiceRuntime) acceptLoop() {
 	}
 }
 
-// SetBackend atomically replaces the backend pointer.
-func (rt *ServiceRuntime) SetBackend(b registry.Backend) {
-	rt.backend.Store(&b)
-	rt.Touch()
-}
-
-// ClearBackend removes the backend while keeping the listener bound.
-func (rt *ServiceRuntime) ClearBackend() {
-	rt.backend.Store(nil)
-	rt.Touch()
-}
-
-// CurrentBackend returns a copy of the current backend, or nil.
+// CurrentBackend obtains one immutable backend snapshot from the registry.
+// The registry is the single authoritative routing state; TCP runtimes own
+// listeners but do not keep another mutable backend pointer.
 func (rt *ServiceRuntime) CurrentBackend() *registry.Backend {
-	if b := rt.backend.Load(); b != nil {
-		c := *b
-		return &c
+	if rt.backendProvider == nil {
+		return nil
 	}
-	return nil
+	b := rt.backendProvider()
+	if b == nil {
+		return nil
+	}
+	c := *b
+	return &c
 }
 
 // Endpoint returns the stable frontend host:port.
@@ -109,19 +102,6 @@ func (rt *ServiceRuntime) Endpoint() string { return rt.Frontend.Addr() }
 
 // Listener exposes the bound listener.
 func (rt *ServiceRuntime) Listener() net.Listener { return rt.listener }
-
-// Touch records activity time.
-func (rt *ServiceRuntime) Touch() { rt.lastActive.Store(time.Now().UnixNano()) }
-
-// LastActive returns the last activity time.
-func (rt *ServiceRuntime) LastActive() time.Time {
-	return time.Unix(0, rt.lastActive.Load())
-}
-
-// Idle reports whether the runtime has been inactive longer than ttl.
-func (rt *ServiceRuntime) Idle(ttl time.Duration) bool {
-	return time.Since(rt.LastActive()) > ttl
-}
 
 // Close stops the accept loop and closes the listener once.
 func (rt *ServiceRuntime) Close() error {

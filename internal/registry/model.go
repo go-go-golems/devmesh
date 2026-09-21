@@ -71,10 +71,15 @@ func (f Frontend) Addr() string {
 
 // ServiceRecord is the registry's view of one logical service.
 type ServiceRecord struct {
-	Name              string
-	Kind              Kind
-	AppProtocol       string
-	OwnerKey          string
+	Name        string
+	Kind        Kind
+	AppProtocol string
+	OwnerKey    string
+	// ProducerID identifies the current concrete publication: the lease
+	// registration ID for process/manual sources, or the Docker container ID
+	// for docker sources. Backend removals must match it to take effect, so a
+	// stale event for a replaced producer is a no-op.
+	ProducerID        string
 	Source            Source
 	Backend           *Backend
 	Frontend          Frontend

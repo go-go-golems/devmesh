@@ -15,6 +15,7 @@ import (
 	"github.com/wesen/devmesh/internal/api"
 	"github.com/wesen/devmesh/internal/config"
 	"github.com/wesen/devmesh/internal/daemon"
+	"github.com/wesen/devmesh/internal/registry"
 	"github.com/wesen/devmesh/internal/transport"
 )
 
@@ -214,29 +215,24 @@ func TestBackendReplacementKeepsFrontend(t *testing.T) {
 	backendA := prefixEcho(t, "A")
 	backendB := prefixEcho(t, "B")
 
-	register := func(owner, backend string) api.RegisterResponse {
+	register := func(backend string) api.RegisterResponse {
 		var reg api.RegisterResponse
-		req := api.RegisterRequest{
-			Name:     "replace.svc",
-			Kind:     "tcp",
-			Source:   "manual",
-			OwnerKey: owner,
-			Backend:  backendDTO(t, backend),
-		}
+		req := api.RegisterRequest{Name: "replace.svc", Kind: "tcp", Source: "manual", Backend: backendDTO(t, backend)}
 		if err := h.client.Do(ctx, "POST", "/v1/registrations", req, &reg); err != nil {
 			t.Fatalf("register %s: %v", backend, err)
 		}
 		return reg
 	}
 
-	first := register("manual:stable-owner", backendA)
+	first := register(backendA)
 	frontend := net.JoinHostPort(first.Frontend.Host, strconv.Itoa(first.Frontend.Port))
 	if got := dialAndRead(t, frontend, "x"); got != "A:x" {
 		t.Fatalf("first backend: got %q", got)
 	}
-
-	// Same owner replaces the backend; frontend must not change.
-	second := register("manual:stable-owner", backendB)
+	if err := h.client.DoAuth(ctx, "DELETE", "/v1/registrations/"+first.RegistrationID, first.LeaseToken, nil, nil); err != nil {
+		t.Fatalf("delete first: %v", err)
+	}
+	second := register(backendB)
 	if second.Frontend.Port != first.Frontend.Port {
 		t.Fatalf("frontend changed on replace: %d -> %d", first.Frontend.Port, second.Frontend.Port)
 	}
@@ -245,18 +241,85 @@ func TestBackendReplacementKeepsFrontend(t *testing.T) {
 	}
 }
 
+// TestSameOwnerReplacementKeepsFrontendInternal exercises the trusted path
+// used by Docker. The old lease is retired, so stale deletion cannot remove
+// the newer publication (P01).
+func TestSameOwnerReplacementKeepsFrontendInternal(t *testing.T) {
+	h := startHarness(t, 5*time.Second)
+	backendA := prefixEcho(t, "A")
+	backendB := prefixEcho(t, "B")
+	toBackend := func(addr string) registry.Backend {
+		return registry.Backend{Host: "127.0.0.1", Port: mustPort(t, addr)}
+	}
+	first, err := h.d.Register(daemon.RegisterParams{Name: "internal.svc", Kind: registry.KindTCP, Source: registry.SourceManual, OwnerKey: "manual:stable", Backend: toBackend(backendA)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := h.d.Register(daemon.RegisterParams{Name: "internal.svc", Kind: registry.KindTCP, Source: registry.SourceManual, OwnerKey: "manual:stable", Backend: toBackend(backendB)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.Frontend.Port != second.Frontend.Port {
+		t.Fatalf("frontend changed: %d -> %d", first.Frontend.Port, second.Frontend.Port)
+	}
+	if err := h.d.DeleteRegistration(first.RegistrationID, first.LeaseToken); err == nil {
+		t.Fatal("retired old registration delete succeeded")
+	}
+	if got := dialAndRead(t, first.Frontend.Addr(), "x"); got != "B:x" {
+		t.Fatalf("stale delete disabled replacement: got %q", got)
+	}
+}
+
+func mustPort(t *testing.T, addr string) int {
+	t.Helper()
+	_, raw, err := net.SplitHostPort(addr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	port, err := strconv.Atoi(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return port
+}
+
 func TestUnrelatedOwnerConflicts(t *testing.T) {
 	h := startHarness(t, 5*time.Second)
 	ctx := context.Background()
 	backend := prefixEcho(t, "A")
-
-	req := api.RegisterRequest{Name: "owned.svc", Kind: "tcp", Source: "manual", OwnerKey: "manual:one", Backend: backendDTO(t, backend)}
+	req := api.RegisterRequest{Name: "owned.svc", Kind: "tcp", Source: "manual", Backend: backendDTO(t, backend)}
 	if err := h.client.Do(ctx, "POST", "/v1/registrations", req, &api.RegisterResponse{}); err != nil {
 		t.Fatalf("first register: %v", err)
 	}
-	req.OwnerKey = "manual:two"
-	err := h.client.Do(ctx, "POST", "/v1/registrations", req, &api.RegisterResponse{})
-	if err == nil {
-		t.Fatal("second owner registration succeeded, want conflict")
+	if err := h.client.Do(ctx, "POST", "/v1/registrations", req, &api.RegisterResponse{}); err == nil {
+		t.Fatal("second registration succeeded, want conflict")
+	}
+}
+
+func TestPublicRegisterRejectsDockerSource(t *testing.T) {
+	h := startHarness(t, 5*time.Second)
+	backend := prefixEcho(t, "A")
+	req := api.RegisterRequest{Name: "hijack.svc", Kind: "tcp", Source: "docker", Backend: backendDTO(t, backend)}
+	if err := h.client.Do(context.Background(), "POST", "/v1/registrations", req, &api.RegisterResponse{}); err == nil {
+		t.Fatal("public docker source accepted")
+	}
+}
+
+func TestTTLOutOfRangeRejected(t *testing.T) {
+	h := startHarness(t, 5*time.Second)
+	backend := prefixEcho(t, "A")
+	for _, ttl := range []int{1, 2, 3601} {
+		req := api.RegisterRequest{Name: "ttl.svc", Kind: "tcp", Source: "manual", Backend: backendDTO(t, backend), TTLSeconds: ttl}
+		if err := h.client.Do(context.Background(), "POST", "/v1/registrations", req, &api.RegisterResponse{}); err == nil {
+			t.Fatalf("ttl %d accepted", ttl)
+		}
+	}
+	var resp api.RegisterResponse
+	req := api.RegisterRequest{Name: "ttl.svc", Kind: "tcp", Source: "manual", Backend: backendDTO(t, backend), TTLSeconds: 3}
+	if err := h.client.Do(context.Background(), "POST", "/v1/registrations", req, &resp); err != nil {
+		t.Fatal(err)
+	}
+	if resp.TTLSeconds != 3 {
+		t.Fatalf("ttl_seconds=%d, want 3", resp.TTLSeconds)
 	}
 }

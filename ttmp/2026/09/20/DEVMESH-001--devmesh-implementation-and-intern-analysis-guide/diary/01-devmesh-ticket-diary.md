@@ -529,3 +529,267 @@ report can be reviewed alongside the implementation it describes.
 ### Technical details
 - Vault source: `/home/manuel/code/wesen/go-go-golems/go-go-parc/Projects/2026/09/20/PROJECT REPORT - Devmesh - Stable Local Endpoints for Ephemeral Backends - A Technical Deep Dive.md`.
 - Mirror: `.../DEVMESH-001--devmesh-implementation-and-intern-analysis-guide/various/vault-project-report--devmesh-deep-dive.md`.
+
+## Step 12: Independent implementation review and hardening design
+
+I reviewed the implementation at `5fbf70cb3bf0d215185351af3eac3bea0b195e0d` against the complete original brief, expanded design guide, and diary. The architecture remains appropriate, but several documented guarantees were not established by the implementation or existing tests. I kept this work analysis-only: production code is unchanged, and all new reproduction programs live under the ticket.
+
+The review includes 12 finding groups, 17 labeled observations, an intern-oriented system explanation, proposed APIs and lifecycle pseudocode, portable text diagrams, and eight implementation phases. The baseline race suite passed including Docker and PostgreSQL, while targeted probes reproduced stale-removal, lease, routing, endpoint, persistence, and shutdown defects. Passing the baseline therefore does not close the original acceptance contract.
+
+### Prompt Context
+**User prompt (verbatim):** "Analyze the implementation of devmesh, read the diary, design doc, original brief, and write your review and assessment and plan for improvements (if necessary). Create  a detailed analysis / design / review that is for a new intern, explaining all the parts of the system needed to understand what it is, with prose paragraphs and bullet point sand pseudocode and diagrams and api references and file references. It should be very clear and technical. Store in the ticket and the nupload to remarkable."
+**Assistant interpretation:** Conduct an evidence-backed review, explain current architecture and deficiencies to a new intern, propose prioritized improvements, store artifacts in DEVMESH-001, and upload the report.
+**Inferred user intent:** Obtain an independent technical assessment and an actionable next implementation plan rather than another optimistic implementation summary.
+**Reviewed code revision:** `5fbf70c`; no production fixes authored during this review.
+
+### What I did
+- Read all 2,476 lines of the brief, 3,454 lines of the design guide, and 531 lines of existing diary, then inspected production packages and tests.
+- Ran `GOWORK=off go test -race ./... -count=1 -v`, `GOWORK=off go build ./...`, `GOWORK=off go vet ./...`, and `GOWORK=off make glazed-lint` successfully.
+- Added `scripts/01-review-probes.go` and `scripts/02-cli-api-probes.py`; ran them against isolated domain objects, loopback listeners, fake Docker inventory, and temporary real binaries/Unix sockets.
+- Preserved outputs and a symbol index under `analysis/evidence/`.
+- Wrote `analysis/01-implementation-review-and-hardening-design-for-a-new-intern.md`, related primary evidence/code files, linked it from the index, and added eight open hardening tasks.
+- Validated report YAML and fence balance; reviewed text diagrams against the code paths and proposed transitions. Compiled the review Go package with `go test` (no test functions; observations come from running the probe).
+
+### Why
+- Logical owner identity must survive replacement, but removal must compare the exact backend incarnation. The current code does not maintain that distinction consistently.
+- An intern needs to understand both intended behavior and observed behavior; proposed APIs are marked as sketches, and source-only concerns are separated from directly reproduced failures.
+- The original brief, old diary entries, and byte-identical mirror remain intact. The current review explicitly corrects historical overstatements instead of silently editing evidence.
+
+### What worked
+- Baseline tests pass; live Docker recreation and PostgreSQL tests ran rather than skipping.
+- Seventeen labeled observations show defects reproducibly; scripts exit successfully because they report current behavior, not because the intended contracts pass.
+- The black-box SIGTERM control exited 0 and removed its socket. Inspection of pinned Glazed code confirmed the framework installs signal-aware contexts; an apparent missing-signal-handler concern was rejected.
+
+### What didn't work
+- Product observations include `P03 Docker reconcile replacement: container=new status=unavailable (desired ready)` and `P10 backend disappears between provider calls: status=200 body=UNINTENDED (desired 503, never caller URL)`; full exact outputs are in `analysis/evidence/03-review-probes.txt`.
+- The occupied-listener probe emitted `http_proxy_listen_failed ... bind: address already in use`, while health remained 200/ok. The full diagnostic and API observations are in `analysis/evidence/04-cli-api-probes.txt`.
+- An exploratory lookup used `rg -n 'envKey|envName|GetSlug|prefix' /home/manuel/go/pkg/mod/github.com/go-go-golems/glazed@v1.4.4/pkg/cmds/sources/env.go` and failed with `No such file or directory (os error 2)`. Located `FromEnv` in `sources/update.go` and read the actual implementation instead. No product finding depends on the failed lookup.
+
+### What I learned
+- Bind-first allocation is correctly implemented, but does not establish persistence or lifecycle correctness.
+- Race-free map operations can still compose into incorrect transitions: expiry snapshots can remove renewed leases, and old Docker identity can clear a replacement.
+- The HTTP double-provider lookup can retain an absolute caller URL when the backend disappears. The reproduction used only a local target, not an external system.
+- Existing tests prove less than earlier summaries claim: allocation distinctness is sequential, recreation checks metadata without a post-recreate DB query, and HTTPS verification is disabled in its test client.
+
+### What was tricky to build
+- Separating actual defects from framework behavior and from incomplete acceptance coverage required checking call ordering across packages, not only reading individual methods.
+- The lease interleaving probe uses explicit logical time at the manager boundary, avoiding an unreliable thread-timing test; it demonstrates the unsafe operation sequence without claiming a production stress test.
+- Portable fenced text diagrams keep the report useful in Markdown and the reMarkable PDF without adding a separate diagram-rendering dependency.
+
+### What warrants a second pair of eyes
+- Proposed publication identity across Docker same-container restart versus container replacement.
+- The HTTP target-selection fix and forwarded-header trust policy.
+- Lock ordering among lifecycle coordination, lease expiry, runtime reaping, and bounded shutdown.
+- The proposed choice to reject new allocations when durable state cannot be saved.
+
+### What should be done in the future
+- Execute the eight open review phases, starting with conditional incarnation-aware removal and authorized producer lifecycle operations.
+- Convert observations into desired-behavior regression tests before fixing them.
+- Keep ACME, local DNS, multi-host discovery, and load balancing deferred until combined lifecycle acceptance passes.
+
+### Code review instructions
+- Start with the review's findings F01–F04 and design decisions D1–D2.
+- Reproduce with `go run <ticket>/scripts/01-review-probes.go` and `python3 <ticket>/scripts/02-cli-api-probes.py` from the repository root.
+- Read `internal/daemon/daemon.go`, `internal/dockerwatch/watcher.go`, `internal/lease/manager.go`, and `internal/proxy/http.go` alongside their cited observations.
+
+### Technical details
+- Review document: `analysis/01-implementation-review-and-hardening-design-for-a-new-intern.md` (approximately 11,000 words).
+- Evidence receipts: `analysis/evidence/01-baseline-race.txt` through `05-symbol-index.txt`.
+- `docmgr doctor --ticket DEVMESH-001 --stale-after 30` passed; `git diff --check` passed.
+- Delivery command: `remarquee upload bundle <review-path> --name 'DEVMESH-001 Implementation Review and Hardening Design' --remote-dir '/ai/2026/09/20/DEVMESH-001' --toc-depth 2 --non-interactive`.
+- Delivery result: `OK: uploaded DEVMESH-001 Implementation Review and Hardening Design.pdf -> /ai/2026/09/20/DEVMESH-001` (receipt: `analysis/evidence/06-remarkable-upload.txt`). This proves cloud upload, not physical-device synchronization.
+- Review and delivery tasks completed; eight hardening implementation phases remain open. No production files or historical vault mirror were changed.
+
+## Step 13: Focus the design on simplification and three delivery slices (v2)
+
+The user asked to turn the broad hardening roadmap into a practical, focused design that does not add machinery for low-impact rare cases. I preserved the complete v1 review and previous task list in the archive, then rewrote the current review/design as a shorter authoritative v2. The three slices prioritize normal TCP/Docker lifecycle, usable HTTP endpoints, and minimal resource/durability cleanup.
+
+The revision reduces supported combinations as well as implementation duplication: one service state, one lease loop, fixed explicit HTTP routes, no idle runtime reaper, prompt connection closure instead of a drain-policy framework, and periodic Docker repair instead of event epochs/replay. These are proposed implementation changes; production code remains unchanged.
+
+### Prompt Context
+**User prompt (verbatim):** "Ok, update the design doc. We want to get this going, so stay focused, and make it clear we don't want to add complex new machinery that would for example only address rare edge cases without any importance or so.
+
+Upload as v2."
+**Assistant interpretation:** Make simplification and scope limits authoritative, replace the oversized roadmap, and deliver a distinct v2 PDF without overwriting v1 annotations.
+**Inferred user intent:** Get the supported workflow working soon and prevent review findings from becoming an open-ended architecture project.
+
+### What I did
+- Archived v1 as `archive/01-implementation-review-v1.md` (SHA-256 `f5be8e7bf36304ff7a925ab31a85c8614ddbdb9932a73f7a4fd3b6aba31559bf`) and the old tasks as `archive/02-tasks-before-focused-v2.txt`.
+- Rewrote the current analysis/design with explicit guardrails, a findings-to-minimal-fix table, three slices, a deferral/trigger table, and a supported-workflow stopping point.
+- Added a scope notice to the original design guide and updated the ticket index so the historical roadmap is not accidentally treated as additional required work.
+- Used docmgr to remove eight superseded tasks without marking them implemented, and added three focused v2 implementation tasks plus a revision/delivery task.
+- Checked frontmatter, relative links, fenced blocks, and the text diagrams against the new architecture; no production tests rerun for this documentation-only revision.
+
+### Why
+- The prior findings are still useful evidence, but not every conceivable improvement should block release.
+- Removing idle reaping and dynamic route migration avoids implementing synchronization/lifecycle machinery solely to support optional flexibility.
+- Periodic reconciliation deliberately permits short repair delays rather than claiming perfect event delivery.
+
+### What worked
+- The current design is approximately 5,600 words versus approximately 11,000 in v1, while retaining evidence links and intern-oriented architecture explanations.
+- The concrete important routing, TTL, and ownership failures remain in scope; advanced event history, generic generations, public hot-update APIs, and policy frameworks are explicitly deferred.
+
+### What didn't work
+- Initial `docmgr doctor --ticket DEVMESH-001 --stale-after 30` rejected the archived task Markdown: `frontmatter delimiters '---' not found`, and warned that the v1 archive lacked a numeric prefix. Renamed the raw task snapshot to numbered `.txt` and the review archive to numbered Markdown, preserving bytes.
+- Two exact-edit attempts to repair archive references failed without changing files: a short path matched twice, then an absolute metadata path did not match because docmgr stored `repo://` paths. Read the actual frontmatter and applied unique replacements.
+
+### What I learned
+- Scope reduction must update the active tasks and original-guide entry point as well as the new prose; otherwise the broad roadmap remains operationally authoritative.
+
+### What was tricky to build
+- Distinguishing a narrower honest contract from an unfixed bug: prompt shutdown is acceptable if documented, while wrong HTTP target selection is not. Fixed routes are acceptable if mutation is rejected without side effects.
+
+### What warrants a second pair of eyes
+- Confirm the deliberate no-reaper and prompt-close policies match intended local usage. They simplify the implementation but differ from the original brief.
+
+### What should be done in the future
+- Implement only the three v2 slices; require a concrete user impact and test before promoting a deferred item.
+
+### Code review instructions
+- Read v2 sections 1, 5, 6, 7, and 8 for guardrails, design, work sequence, deferrals, and stopping criteria.
+- The archived v1 findings remain evidence, not a second backlog.
+
+### Technical details
+- Current document remains `analysis/01-implementation-review-and-hardening-design-for-a-new-intern.md`.
+- Final validation: `docmgr doctor --ticket DEVMESH-001 --stale-after 30` and `git diff --check` passed; YAML, relative links, and fence checks passed. Text diagrams were reviewed against the simplified paths.
+- Upload command: `remarquee upload bundle <current-document> --name 'DEVMESH-001 Implementation Review and Focused Simplification Design v2' --remote-dir '/ai/2026/09/20/DEVMESH-001' --toc-depth 2 --non-interactive`.
+- Receipt: `OK: uploaded DEVMESH-001 Implementation Review and Focused Simplification Design v2.pdf -> /ai/2026/09/20/DEVMESH-001`, retained in `analysis/evidence/07-remarkable-upload-v2.txt`. This confirms cloud delivery, not device synchronization; v1 was not overwritten.
+- Design/delivery complete; three implementation slices remain open. No production code changed.
+
+## Step 14: Specify practical CLI-first devctl integration
+
+I extended the current v2 design with the practical integration discussed in chat: first reuse foreground registration and endpoint resolution with a devctl-supervised shell launcher, then add native wrapper support only when an application needs it. The section distinguishes proposed CLI flags and launch-plan fields from implemented interfaces and keeps process ownership in devctl and frontend ownership in devmesh.
+
+### Prompt Context
+**User prompt (verbatim):** "Ok, update the design doc."
+**Assistant interpretation:** Incorporate the preceding practical CLI-first implementation proposal into the current focused design.
+**Inferred user intent:** Preserve an actionable integration plan without expanding into transactional orchestration machinery.
+
+### What I did
+- Added section 10 to the current review/design: registration keeper contract, `resolve --raw --wait`, Compose consumer launcher, optional per-run backend-file convention, precise devctl insertion points, and tests.
+- Specified registration readiness versus application health, plugin lifetime versus persistent wrapper lifetime, bounded failure cleanup, response-loss recovery, and endpoint snapshot limitations.
+- Added one CLI-first integration task dependent on Slice A; native wrapper schema work remains conditional follow-up.
+
+### Why
+- Planning plugins terminate after planning and cannot safely hold service leases. Existing persistent wrappers already own the relevant child lifetime.
+- Ordered startup with bounded cleanup is sufficient; no cross-service atomic transaction or rollback coordinator is needed.
+
+### What worked
+- Existing architecture and prior devctl inspection at `bac5d91` provide concrete integration sites without adding a daemon or registry.
+
+### What didn't work
+- No implementation failures; this is a documentation-only update.
+
+### What I learned
+- The first working Compose-to-API integration can use existing devctl command/environment facilities without schema changes.
+
+### What was tricky to build
+- Making the optional native address-file convention explicit without implying arbitrary applications already support it or that port scanning is safe allocation.
+
+### What warrants a second pair of eyes
+- The future Glazed command implementation must actually flush early JSON output and support domain raw rendering without recreating universal output machinery.
+
+### What should be done in the future
+- Implement the CLI improvements after core lease/removal fixes, then prove the Compose example before adding native wrapper fields.
+
+### Code review instructions
+- Read current design section 10 alongside devctl `pkg/engine/types.go`, `pkg/operator/planner.go`, and `cmd/devctl/cmds/wrap_service.go`.
+
+### Technical details
+- No production files changed. No upload requested for this turn; the previously uploaded v2 PDF does not contain this new integration section.
+- Document validation is recorded in the final handoff; no production tests are warranted for the prose-only change.
+
+## Step 15: Implement Slice A — one routing authority and producer lifecycle
+
+This slice changed devmesh’s lifecycle model rather than adding a new lifecycle framework. The registry is now the single authoritative source for a service’s current backend; TCP runtimes retain only their frontend listener and ask the registry for one backend snapshot per accepted connection, as the HTTP router already does. The automatic idle reaper was removed, so a service frontend remains reserved until daemon shutdown instead of moving through another reaper/recreation state.
+
+The implementation also closes the observed stale-removal and lease timing failures. A record now carries its concrete producer ID (registration ID for process/manual registrations, container ID for Docker). Lease expiration, deletion, and Docker forget events clear a backend only when that producer ID still matches the current record. Docker keeps responsive events but adds five-second periodic reconciliation as a deliberately simple repair mechanism; no event epoch, replay cursor, or deduplication subsystem was added.
+
+### Prompt Context
+**User prompt (verbatim):** "Implement, commit at appropriate intervals and keep a detailed diary as you work (using the diary format from the skill)"
+**Assistant interpretation:** Implement the focused v2 design incrementally, validate each coherent slice, commit at boundaries, and preserve reasoning and failures in the ticket diary.
+**Inferred user intent:** Deliver working behavior without expanding the design into rare-edge-case machinery.
+
+### What I did
+- Replaced the TCP runtime’s mutable backend pointer with a provider that reads the registry’s current ready backend, so registry, TCP, and HTTP no longer have separate authoritative backend values.
+- Added `ProducerID` to `registry.ServiceRecord` and `ClearBackendIf(name, producerID)`. `Daemon.endPublication` uses this conditional operation for lease expiry, explicit deletion, and Docker forget callbacks.
+- Retired an old same-owner process/manual lease on trusted replacement. An old token can no longer clear a newer backend.
+- Added per-entry effective TTL, strict expiry-at-deadline behavior, and atomic `TakeExpired(now)` removal. The daemon rejects TTLs outside 3–3600 seconds before listener allocation or registry mutation.
+- Removed runtime idle reaping and the `runtime_idle_ttl` field/flag/config mapping. A legacy config key now returns a migration error instead of being ignored.
+- Narrowed public registration: Docker remains a trusted in-process source; ordinary HTTP callers may create only process/manual registrations and cannot submit owner, registration, or container identity fields.
+- Extracted daemon Docker callbacks for fake-watcher tests; added bounded Docker list/inspect calls, periodic reconciliation, full registration forget callbacks, channel-close handling, and present-versus-inspect-failure reconciliation semantics.
+- Moved CLI foreground registration onto the shared Go client handle. Added explicit `--http-host`, retained `--once` as a non-renewed diagnostic path, and added `services resolve --raw --wait` for scripts.
+- Added/updated regression coverage for stale lease deletion, stale Docker removal, per-entry TTL renewal, atomic expiry, public Docker-source rejection, port/TLL validation, public replacement by delete/re-register, and overlapping real-Docker container replacement.
+
+### Why
+- A single backend authority eliminates registry/runtime disagreement; frontends remain a runtime concern and backends remain registry state.
+- Conditional identity checks are small and sufficient for the observed stale removal failures. Logical owner keys still permit Docker recreation; concrete producer IDs prevent the old container from removing the new one.
+- Retaining listeners removes the reaper’s registration race and makes within-run endpoint behavior simpler. Port reclamation is deferred until real high-churn usage demonstrates a need.
+- The SDK and CLI now share lease behavior so their heartbeat, re-registration, cancellation, and cleanup rules cannot drift.
+
+### What worked
+- Full validation after the final single-authority refactor passed:
+
+  ```bash
+  GOWORK=off go build ./...
+  GOWORK=off go vet ./...
+  GOWORK=off go test -race ./... -count=1
+  GOWORK=off make glazed-lint
+  ```
+
+- The updated review verification probe reported:
+
+  ```text
+  P01 old lease DELETE after replacement: status=ready stale_delete_rejected=true
+  P02 stale foreign forget: registry=ready runtime_backend_nil=false
+  P03 Docker reconcile replacement: container=new status=ready
+  P06 requested TTL=60s: initial~60s renewed~60s
+  P07 atomic expiry take: taken=1 renew_rejected=true leases=0
+  ```
+
+  Full output: `analysis/evidence/08-slice-a-review-probes.txt`.
+- Manual isolated CLI smoke test built temporary binaries, used a temporary Unix socket/state file and Python loopback backend, and produced immediate output:
+
+  ```text
+  once={"endpoint":"127.0.0.1:16253",...}
+  raw=127.0.0.1:16253
+  keeper_bytes_before_interrupt=133
+  ```
+
+  The foreground Glazed command flushed its JSONL row before interrupt; `resolve --raw --wait` returned only the endpoint.
+- Existing real Docker and PostgreSQL integration tests remained enabled and passed. The Docker recreation test now creates B before removing A, exercising the stale-old-container path.
+
+### What didn't work
+- The first compile after changing public registration fields failed in tests that still constructed `api.RegisterRequest{OwnerKey: ...}` and used `ForgetByOwner`; updated public tests to use daemon-issued identity or trusted daemon calls. Relevant diagnostic: `unknown field OwnerKey in struct literal of type api.RegisterRequest`.
+- The first TTL regression assertion compared two consecutive `now + 60s` expirations and measured only call spacing: `renewal window = 5.139411ms, want ~60s`. Corrected the test to inspect time remaining after renewal.
+- The initial review probe still called `DeleteRegistration` through a retired same-owner lease and panicked because retirement now correctly returns registration-not-found. Updated it to assert stale deletion rejection.
+- No production behavior was rolled back. These were test/probe adaptation failures caused by the intentionally narrower public API.
+
+### What I learned
+- The existing Glazed processor emits the foreground `register --format jsonl` row before the command blocks; the manual smoke test established this rather than assuming `AddRow` streams.
+- Validation must happen before frontend allocation. An early TTL bounds test exposed that validation at the end of `Register` left a name/runtime behind on a rejected request; moved TTL validation before all allocation and registry mutation.
+- A race detector does not prove lifecycle semantics, but the conditional producer-ID path is now covered by ordinary regression tests and the historical probes.
+
+### What was tricky to build
+- The public API must not accept Docker source/identity, while the Docker watcher still needs stable owner key and container identity. Keeping the latter as a typed in-process daemon callback avoided a second admin endpoint.
+- Removing duplicate backend state without changing TCP hot-path behavior required a provider closure that returns a registry snapshot at accept time. Existing connections still retain the backend selected at their accept.
+
+### What warrants a second pair of eyes
+- The deliberate policy to retain all service listeners until daemon shutdown; it is simpler than idle reaping but trades automatic port reclamation for stability.
+- The five-second Docker repair interval and ten-second call bound; both are local-development defaults, not a claim of exactly-once event delivery.
+- Caller context cancellation now stops a Go client’s heartbeat loop. This is documented in `pkg/devmesh`; verify it matches expected embedding usage.
+
+### What should be done in the future
+- Implement Slice B next: safe one-read HTTP target selection, fixed explicit host ownership, truthful frontend URLs, and synchronous listener binding.
+- Then implement Slice C: prompt active-connection closure, fail-fast state persistence, socket-file safety, and combined acceptance behavior.
+- Do not add a public hot-update API, event replay system, or listener eviction until a concrete workflow requires it.
+
+### Code review instructions
+- Start with `internal/registry/registry.go` (`ClearBackendIf`), `internal/daemon/daemon.go` (`endPublication`, `registerLocked`), `internal/runtime/service.go` (`CurrentBackend`), and `internal/lease/manager.go` (`TakeExpired`).
+- Then review `internal/dockerwatch/watcher.go` and the CLI/client lifecycle pair.
+- Reproduce with `GOWORK=off go run ttmp/2026/09/20/DEVMESH-001--devmesh-implementation-and-intern-analysis-guide/scripts/01-review-probes.go` and run the full validation gate above.
+
+### Technical details
+- Slice A task: `5c9w`.
+- Evidence: `analysis/evidence/08-slice-a-review-probes.txt`.
+- The task is complete after the associated implementation commit; Slice B and C remain open.

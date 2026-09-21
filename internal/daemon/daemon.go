@@ -47,6 +47,11 @@ type Daemon struct {
 	cancel       context.CancelFunc
 	wg           sync.WaitGroup
 	tlsCert      *tls.Certificate
+
+	// Proxy listeners are bound during New so successful daemon startup means
+	// every configured public endpoint is actually owned.
+	httpListener  net.Listener
+	httpsListener net.Listener
 }
 
 // New builds a daemon from validated config. It loads persistent state.
@@ -67,7 +72,6 @@ func New(cfg config.Config, logger *slog.Logger) (*Daemon, error) {
 		Registry:  registry.New(),
 		State:     st,
 		Lease:     lease.NewManager(cfg.LeaseTTL),
-		HTTP:      proxy.NewRouter("http", logger),
 		startedAt: time.Now(),
 	}
 	alloc := runtime.NewAllocator(cfg.TCPFrontendHost, cfg.TCPFrontendMin, cfg.TCPFrontendMax, st, logger)
@@ -85,7 +89,53 @@ func New(cfg config.Config, logger *slog.Logger) (*Daemon, error) {
 	if err := d.loadTLS(); err != nil {
 		return nil, err
 	}
+	scheme, addr := "http", cfg.HTTP.HTTPAddr
+	if d.tlsCert != nil {
+		scheme, addr = "https", cfg.HTTP.HTTPSAddr
+	}
+	port, err := listenerPort(addr)
+	if err != nil {
+		return nil, err
+	}
+	d.HTTP = proxy.NewRouter(scheme, port, logger)
+	if err := d.bindProxyListeners(); err != nil {
+		return nil, err
+	}
 	return d, nil
+}
+
+func listenerPort(addr string) (int, error) {
+	_, rawPort, err := net.SplitHostPort(addr)
+	if err != nil {
+		return 0, fmt.Errorf("parse listener address %q: %w", addr, err)
+	}
+	port, err := strconv.Atoi(rawPort)
+	if err != nil {
+		return 0, fmt.Errorf("parse listener port %q: %w", rawPort, err)
+	}
+	return port, nil
+}
+
+func (d *Daemon) bindProxyListeners() error {
+	if d.cfg.HTTP.Enabled {
+		ln, err := net.Listen("tcp", d.cfg.HTTP.HTTPAddr)
+		if err != nil {
+			return fmt.Errorf("bind HTTP proxy listener %s: %w", d.cfg.HTTP.HTTPAddr, err)
+		}
+		d.httpListener = ln
+	}
+	if d.tlsCert != nil {
+		ln, err := net.Listen("tcp", d.cfg.HTTP.HTTPSAddr)
+		if err != nil {
+			if d.httpListener != nil {
+				_ = d.httpListener.Close()
+				d.httpListener = nil
+			}
+			return fmt.Errorf("bind HTTPS proxy listener %s: %w", d.cfg.HTTP.HTTPSAddr, err)
+		}
+		d.httpsListener = ln
+	}
+	return nil
 }
 
 // loadTLS validates an existing PEM certificate/key pair at startup. Both
@@ -119,7 +169,7 @@ func (d *Daemon) Logger() *slog.Logger { return d.logger }
 // StartedAt returns daemon start time.
 func (d *Daemon) StartedAt() time.Time { return d.startedAt }
 
-// Start launches background sweeper and reaper goroutines.
+// Start launches background workers and serves the proxy listeners bound by New.
 func (d *Daemon) Start(ctx context.Context) {
 	ctx, cancel := context.WithCancel(ctx)
 	d.cancel = cancel
@@ -139,50 +189,42 @@ func (d *Daemon) Start(ctx context.Context) {
 		}
 	}()
 
-	if d.cfg.HTTP.Enabled {
+	if d.httpListener != nil {
 		d.wg.Add(1)
-		go func() {
-			defer d.wg.Done()
-			srv := &http.Server{Addr: d.cfg.HTTP.HTTPAddr, Handler: d.HTTP}
-			go func() {
-				<-ctx.Done()
-				sctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-				defer cancel()
-				_ = srv.Shutdown(sctx)
-			}()
-			if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-				d.logger.Warn("http_proxy_listen_failed", "addr", d.cfg.HTTP.HTTPAddr, "error", err)
-			}
-		}()
+		go d.serveProxy(ctx, "http", d.httpListener, &http.Server{Handler: d.HTTP})
 	}
-
-	if d.tlsCert != nil {
+	if d.httpsListener != nil {
 		d.wg.Add(1)
-		go func() {
-			defer d.wg.Done()
-			srv := &http.Server{
-				Addr:    d.cfg.HTTP.HTTPSAddr,
-				Handler: d.HTTP,
-				TLSConfig: &tls.Config{
-					Certificates: []tls.Certificate{*d.tlsCert},
-					MinVersion:   tls.VersionTLS12,
-				},
-			}
-			go func() {
-				<-ctx.Done()
-				sctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-				defer cancel()
-				_ = srv.Shutdown(sctx)
-			}()
-			if err := srv.ListenAndServeTLS("", ""); err != nil && !errors.Is(err, http.ErrServerClosed) {
-				d.logger.Warn("https_proxy_listen_failed", "addr", d.cfg.HTTP.HTTPSAddr, "error", err)
-			}
-		}()
+		go d.serveProxy(ctx, "https", d.httpsListener, &http.Server{
+			Handler: d.HTTP,
+			TLSConfig: &tls.Config{
+				Certificates: []tls.Certificate{*d.tlsCert},
+				MinVersion:   tls.VersionTLS12,
+			},
+		})
 	}
 
 	d.logger.Info("daemon_started", "version", Version, "state", d.cfg.StatePath)
-
 	d.StartDockerWatcher(ctx)
+}
+
+func (d *Daemon) serveProxy(ctx context.Context, scheme string, ln net.Listener, srv *http.Server) {
+	defer d.wg.Done()
+	go func() {
+		<-ctx.Done()
+		sctx, cancel := context.WithTimeout(context.Background(), d.cfg.ShutdownTimeout)
+		defer cancel()
+		_ = srv.Shutdown(sctx)
+	}()
+	var err error
+	if scheme == "https" {
+		err = srv.ServeTLS(ln, "", "")
+	} else {
+		err = srv.Serve(ln)
+	}
+	if err != nil && !errors.Is(err, http.ErrServerClosed) {
+		d.logger.Warn(scheme+"_proxy_serve_failed", "addr", ln.Addr().String(), "error", err)
+	}
 }
 
 // DockerCallbacks returns the callback wiring that connects a Docker watcher
@@ -340,6 +382,27 @@ func (d *Daemon) registerLocked(p RegisterParams) (RegisterResult, error) {
 	if source != registry.SourceDocker && (ttl < config.MinLeaseTTL || ttl > config.MaxLeaseTTL) {
 		return RegisterResult{}, errf(CodeInvalidRequest, "ttl_seconds must be between %d and %d", int(config.MinLeaseTTL.Seconds()), int(config.MaxLeaseTTL.Seconds()))
 	}
+	hostname := ""
+	if kind == registry.KindHTTP {
+		var err error
+		hostname, err = canonicalHTTPHost(p.HTTPHost)
+		if err != nil {
+			return RegisterResult{}, errf(CodeInvalidRequest, "%s", err)
+		}
+	}
+	if existing, ok := d.Registry.Resolve(p.Name); ok {
+		if existing.Kind != kind {
+			return RegisterResult{}, errf(CodeNameConflict, "service %s already exists with kind %s; kind is immutable until daemon restart", p.Name, existing.Kind)
+		}
+		if kind == registry.KindHTTP && existing.Hostname != hostname {
+			return RegisterResult{}, errf(CodeNameConflict, "service %s already owns hostname %s; hostname is immutable until daemon restart", p.Name, existing.Hostname)
+		}
+	}
+	if kind == registry.KindHTTP {
+		if existing, ok := d.Registry.FindByHostname(hostname); ok && existing.Name != p.Name {
+			return RegisterResult{}, errf(CodeNameConflict, "hostname %s is already owned by service %s", hostname, existing.Name)
+		}
+	}
 	regID := p.RegistrationID
 	if regID == "" {
 		regID = newID()
@@ -385,10 +448,6 @@ func (d *Daemon) registerLocked(p RegisterParams) (RegisterResult, error) {
 	}
 
 	if kind == registry.KindHTTP {
-		hostname := strings.ToLower(strings.TrimSpace(p.HTTPHost))
-		if hostname == "" {
-			return RegisterResult{}, errf(CodeInvalidRequest, "http_host is required for kind=http")
-		}
 		rec.Hostname = hostname
 		rec.Frontend = registry.Frontend{URL: d.HTTP.FrontendURL(hostname)}
 	} else {
@@ -436,6 +495,17 @@ func (d *Daemon) registerLocked(p RegisterParams) (RegisterResult, error) {
 
 	d.logger.Info("service_registered", "service", p.Name, "source", source, "backend", p.Backend.Addr(), "frontend", frontendLabel(rec.Frontend))
 	return res, nil
+}
+
+func canonicalHTTPHost(raw string) (string, error) {
+	host := strings.TrimSuffix(strings.ToLower(strings.TrimSpace(raw)), ".")
+	if host == "" {
+		return "", fmt.Errorf("http_host is required for kind=http")
+	}
+	if strings.ContainsAny(host, ":/@") {
+		return "", fmt.Errorf("http_host %q must be a hostname without scheme, path, or port", raw)
+	}
+	return host, nil
 }
 
 func frontendLabel(f registry.Frontend) string {

@@ -3,6 +3,7 @@ package daemon
 import (
 	"io"
 	"log/slog"
+	"net"
 	"os"
 	"path/filepath"
 	"testing"
@@ -31,6 +32,20 @@ func TestTLSRequiresBothFiles(t *testing.T) {
 	cfg.HTTP.KeyFile = "/nonexistent/key.pem"
 	if _, err := New(cfg, discardLogger()); err == nil {
 		t.Fatal("expected error when key_file is set without cert_file")
+	}
+}
+
+func TestHTTPListenerMustBindBeforeStartupSucceeds(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	cfg := testConfig(t)
+	cfg.HTTP.Enabled = true
+	cfg.HTTP.HTTPAddr = ln.Addr().String()
+	if _, err := New(cfg, discardLogger()); err == nil {
+		t.Fatal("daemon started despite occupied HTTP listener")
 	}
 }
 

@@ -44,9 +44,6 @@ func (r *Registry) CreateOrReplaceOwned(rec ServiceRecord) (ServiceRecord, error
 	if rec.UpdatedAt.IsZero() {
 		rec.UpdatedAt = time.Now()
 	}
-	if rec.Frontend.Host == "" && ok {
-		rec.Frontend = existing.Frontend
-	}
 	r.services[rec.Name] = rec
 	return rec.Clone(), nil
 }

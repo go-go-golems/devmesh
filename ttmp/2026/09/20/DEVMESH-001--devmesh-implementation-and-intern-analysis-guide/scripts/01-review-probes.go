@@ -14,6 +14,8 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/docker/docker/api/types/container"
@@ -93,16 +95,14 @@ func main() {
 	must(w.Reconcile(context.Background()))
 	rec, _ = d.Registry.Resolve("docker.svc")
 	fmt.Printf("P03 Docker reconcile replacement: container=%s status=%s (desired ready)\n", rec.DockerContainerID, rec.Status)
-	for i, name := range []string{"http.a", "http.b"} {
-		_, e := d.Register(daemon.RegisterParams{Name: name, Kind: registry.KindHTTP, Source: registry.SourceManual, OwnerKey: name, HTTPHost: "same.test", Backend: registry.Backend{Host: "127.0.0.1", Port: 49200 + i}})
-		must(e)
-	}
-	provider, _ := d.HTTP.Lookup("same.test")
-	fmt.Printf("P04 duplicate HTTP host accepted: backend_port=%d (desired conflict on second registration)\n", provider().Port)
-	_, e = d.Register(daemon.RegisterParams{Name: "http.a", Kind: registry.KindHTTP, Source: registry.SourceManual, OwnerKey: "http.a", HTTPHost: "new.test", Backend: registry.Backend{Host: "127.0.0.1", Port: 49202}})
+	_, e = d.Register(daemon.RegisterParams{Name: "http.a", Kind: registry.KindHTTP, Source: registry.SourceManual, OwnerKey: "http.a", HTTPHost: "same.test", Backend: registry.Backend{Host: "127.0.0.1", Port: 49200}})
 	must(e)
+	_, duplicateErr := d.Register(daemon.RegisterParams{Name: "http.b", Kind: registry.KindHTTP, Source: registry.SourceManual, OwnerKey: "http.b", HTTPHost: "same.test", Backend: registry.Backend{Host: "127.0.0.1", Port: 49201}})
+	provider, _ := d.HTTP.Lookup("same.test")
+	fmt.Printf("P04 duplicate HTTP host rejected=%v backend_port=%d (desired true/49200)\n", duplicateErr != nil, provider().Port)
+	_, mutationErr := d.Register(daemon.RegisterParams{Name: "http.a", Kind: registry.KindHTTP, Source: registry.SourceManual, OwnerKey: "http.a", HTTPHost: "new.test", Backend: registry.Backend{Host: "127.0.0.1", Port: 49202}})
 	rec, _ = d.Registry.Resolve("http.a")
-	fmt.Printf("P05 HTTP host change: hostname=%s advertised_url=%s (desired agreement and configured port)\n", rec.Hostname, rec.Frontend.URL)
+	fmt.Printf("P05 HTTP host mutation rejected=%v hostname=%s advertised_url=%s (desired true/same.test/configured port)\n", mutationErr != nil, rec.Hostname, rec.Frontend.URL)
 	m := lease.NewManager(15 * time.Second)
 	entry := m.AddWithTTL("ttl", "ttl.svc", "o", "t", 60*time.Second)
 	exp, e := m.Renew("ttl", "t")
@@ -125,14 +125,20 @@ func main() {
 	must(e)
 	fmt.Printf("P09 preexisting regular file replaced with socket=%v (desired refusal)\n", st.Mode()&os.ModeSocket != 0)
 	ln.Close()
+	safe := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { fmt.Fprint(w, "SAFE") }))
+	defer safe.Close()
 	unintended := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { fmt.Fprint(w, "UNINTENDED") }))
 	defer unintended.Close()
-	router := proxy.NewRouter("http", logger)
+	host, rawPort, err := net.SplitHostPort(strings.TrimPrefix(safe.URL, "http://"))
+	must(err)
+	port, err := strconv.Atoi(rawPort)
+	must(err)
+	router := proxy.NewRouter("http", 80, logger)
 	calls := 0
 	router.Set("route.test", func() *registry.Backend {
 		calls++
 		if calls == 1 {
-			return &registry.Backend{Host: "127.0.0.1", Port: 1}
+			return &registry.Backend{Host: host, Port: port}
 		}
 		return nil
 	})
@@ -140,7 +146,7 @@ func main() {
 	req.Host = "route.test"
 	rr := httptest.NewRecorder()
 	router.ServeHTTP(rr, req)
-	fmt.Printf("P10 backend disappears between provider calls: status=%d body=%s (desired 503, never caller URL)\n", rr.Code, rr.Body.String())
+	fmt.Printf("P10 one backend snapshot: status=%d body=%s provider_calls=%d (desired 200/SAFE/1)\n", rr.Code, rr.Body.String(), calls)
 	badPath := filepath.Join(dir, "parent", "state.json")
 	store, e := state.Load(badPath)
 	must(e)

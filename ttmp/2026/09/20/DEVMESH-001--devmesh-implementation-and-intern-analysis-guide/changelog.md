@@ -89,3 +89,13 @@ Implemented v2 Slice A: registry is the sole backend authority; conditional prod
 - /home/manuel/code/wesen/2026-09-20--devmesh/internal/daemon/daemon.go — Conditional publication lifecycle and registry-backed runtime provider
 - /home/manuel/code/wesen/2026-09-20--devmesh/internal/dockerwatch/watcher.go — Simple periodic reconciliation and full forget identity
 - /home/manuel/code/wesen/2026-09-20--devmesh/internal/lease/manager.go — Per-entry TTL and atomic expiry take
+
+## 2026-09-20
+
+Implemented v2 Slice B: one-snapshot HTTP proxy rewrite, untrusted forwarded-header removal, fixed canonical hostname ownership, kind/hostname immutability, bind-before-start proxy listeners, and scheme/port-aware URLs through API/CLI/SDK. Full race/build/vet/glazed-lint pass.
+
+### Related Files
+
+- /home/manuel/code/wesen/2026-09-20--devmesh/integration/http_proxy_test.go — Hostname/URL integration evidence
+- /home/manuel/code/wesen/2026-09-20--devmesh/internal/daemon/daemon.go — Synchronous proxy listener ownership and route validation
+- /home/manuel/code/wesen/2026-09-20--devmesh/internal/proxy/http.go — One backend snapshot and explicit outbound target

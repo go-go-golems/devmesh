@@ -65,7 +65,10 @@ func TestHTTPSProxyWithExistingCertificate(t *testing.T) {
 		io.WriteString(w, "TLS")
 	}))
 	defer backend.Close()
-	registerHTTP(t, h, "checkout.api", "api-checkout.test", strings.TrimPrefix(backend.URL, "http://"))
+	reg := registerHTTP(t, h, "checkout.api", "api-checkout.test", strings.TrimPrefix(backend.URL, "http://"))
+	if want := "https://api-checkout.test:" + strings.TrimPrefix(h.httpsAddr, "127.0.0.1:"); reg.Frontend.URL != want {
+		t.Fatalf("advertised HTTPS URL = %q, want %q", reg.Frontend.URL, want)
+	}
 
 	client := &http.Client{
 		Timeout:   3 * time.Second,

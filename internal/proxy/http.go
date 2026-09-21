@@ -1,10 +1,13 @@
 package proxy
 
 import (
+	"context"
 	"log/slog"
 	"net"
 	"net/http"
 	"net/http/httputil"
+	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -16,12 +19,14 @@ import (
 type BackendProvider func() *registry.Backend
 
 // Router demultiplexes HTTP requests by Host header onto one shared listener.
-// It is safe for concurrent use.
+// It is safe for concurrent use. The registry remains authoritative for each
+// route's backend; the router stores only hostname-to-provider wiring.
 type Router struct {
 	mu     sync.RWMutex
 	routes map[string]*httpProxy
 	logger *slog.Logger
 	scheme string
+	port   int
 }
 
 type httpProxy struct {
@@ -30,29 +35,49 @@ type httpProxy struct {
 	proxy    *httputil.ReverseProxy
 }
 
-// NewRouter builds an HTTP router. scheme is "http" or "https" and is used only
-// for the frontend URL.
-func NewRouter(scheme string, logger *slog.Logger) *Router {
+type routeContextKey struct{}
+
+type routeSnapshot struct {
+	backend    registry.Backend
+	publicHost string
+}
+
+// NewRouter builds an HTTP router. scheme and port describe the public
+// frontend, not the loopback backend. Non-default ports are included in URLs
+// returned by FrontendURL.
+func NewRouter(scheme string, port int, logger *slog.Logger) *Router {
 	if scheme == "" {
 		scheme = "http"
 	}
-	return &Router{routes: map[string]*httpProxy{}, logger: logger, scheme: scheme}
+	return &Router{routes: map[string]*httpProxy{}, logger: logger, scheme: scheme, port: port}
 }
 
-// Set installs or replaces the route for hostname.
+// Set installs or replaces the route for hostname. The backend provider is
+// evaluated exactly once per request in ServeHTTP; Rewrite reads the resulting
+// immutable request snapshot rather than calling it again.
 func (r *Router) Set(hostname string, provider BackendProvider) {
 	key := normalizeHost(hostname)
 	hp := &httpProxy{hostname: key, provider: provider}
 	hp.proxy = &httputil.ReverseProxy{
-		Director: func(req *http.Request) {
-			if b := provider(); b != nil {
-				req.URL.Scheme = "http"
-				req.URL.Host = b.Addr()
+		Rewrite: func(pr *httputil.ProxyRequest) {
+			snapshot, ok := pr.In.Context().Value(routeContextKey{}).(routeSnapshot)
+			if !ok {
+				// ServeHTTP always installs this snapshot. If a future caller
+				// bypasses it, force a guaranteed failing loopback target rather
+				// than leaving a caller-supplied absolute URL in place.
+				pr.SetURL(&url.URL{Scheme: "http", Host: "127.0.0.1:0"})
+				return
 			}
-			req.Host = hp.hostname
-			if req.Header.Get("X-Forwarded-Host") == "" {
-				req.Header.Set("X-Forwarded-Host", hp.hostname)
-			}
+			pr.SetURL(&url.URL{Scheme: "http", Host: snapshot.backend.Addr()})
+			// Preserve the canonical public host for applications that route on
+			// Host, while SetURL selects only the verified loopback backend.
+			pr.Out.Host = snapshot.publicHost
+			// Inbound forwarded headers are untrusted. Set clean values from
+			// the current request instead of appending caller-controlled ones.
+			pr.Out.Header.Del("X-Forwarded-For")
+			pr.Out.Header.Del("X-Forwarded-Host")
+			pr.Out.Header.Del("X-Forwarded-Proto")
+			pr.SetXForwarded()
 		},
 		ErrorHandler: func(w http.ResponseWriter, _ *http.Request, err error) {
 			r.logger.Warn("http_proxy_error", "host", hp.hostname, "error", err)
@@ -82,12 +107,19 @@ func (r *Router) Lookup(hostname string) (BackendProvider, bool) {
 	return hp.provider, true
 }
 
-// FrontendURL returns the stable URL for a hostname.
+// FrontendURL returns the stable public URL for a hostname. A configured
+// non-default listener port is part of the consumer contract.
 func (r *Router) FrontendURL(hostname string) string {
-	return r.scheme + "://" + normalizeHost(hostname)
+	host := normalizeHost(hostname)
+	if r.port > 0 && !((r.scheme == "http" && r.port == 80) || (r.scheme == "https" && r.port == 443)) {
+		host = net.JoinHostPort(host, strconv.Itoa(r.port))
+	}
+	return (&url.URL{Scheme: r.scheme, Host: host}).String()
 }
 
-// ServeHTTP routes by Host header.
+// ServeHTTP routes by Host header. It resolves the current backend once and
+// carries that snapshot through Rewrite, preventing a backend change between
+// availability check and outbound target selection.
 func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	host := normalizeHost(req.Host)
 	r.mu.RLock()
@@ -97,10 +129,13 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		http.Error(w, "404 Not Found", http.StatusNotFound)
 		return
 	}
-	if hp.provider() == nil {
+	backend := hp.provider()
+	if backend == nil {
 		http.Error(w, "503 Service Unavailable", http.StatusServiceUnavailable)
 		return
 	}
+	snapshot := routeSnapshot{backend: *backend, publicHost: host}
+	req = req.WithContext(context.WithValue(req.Context(), routeContextKey{}, snapshot))
 	hp.proxy.ServeHTTP(w, req)
 }
 
@@ -109,10 +144,10 @@ func normalizeHost(host string) string {
 	if h == "" {
 		return h
 	}
-	if strings.Contains(h, ":") {
-		if hostPart, _, err := net.SplitHostPort(h); err == nil {
-			return hostPart
-		}
+	if hostPart, _, err := net.SplitHostPort(h); err == nil {
+		h = hostPart
 	}
+	h = strings.TrimPrefix(h, "[")
+	h = strings.TrimSuffix(h, "]")
 	return strings.TrimSuffix(h, ".")
 }

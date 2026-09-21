@@ -1,0 +1,14 @@
+P13 occupied HTTP listener rejected=True socket_created=False
+healthy daemon=[200, {"status": "ok", "version": "0.1.0", "docker": "disabled"}]
+P14 public Docker-source rejected=True code=400
+P15 HTTP registration status=201 url=http://web.test:50801 configured_listener=127.0.0.1:50801
+P16 CLI HTTP resolution=[
+{
+  "endpoint": "http://web.test:50801",
+  "kind": "http",
+  "name": "web.review",
+  "status": "ready"
+}
+]
+P17 public owner replay rejected=True backend_unchanged=True
+Control SIGTERM: exit=0 socket_removed=True

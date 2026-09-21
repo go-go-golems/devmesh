@@ -96,10 +96,10 @@ func (c Config) Validate() error {
 		if _, _, err := net.SplitHostPort(c.HTTP.HTTPAddr); err != nil {
 			return fmt.Errorf("invalid http_addr %q: %w", c.HTTP.HTTPAddr, err)
 		}
-		if c.HTTP.CertFile != "" && c.HTTP.KeyFile != "" {
-			if _, _, err := net.SplitHostPort(c.HTTP.HTTPSAddr); err != nil {
-				return fmt.Errorf("invalid https_addr %q: %w", c.HTTP.HTTPSAddr, err)
-			}
+	}
+	if c.HTTP.CertFile != "" || c.HTTP.KeyFile != "" {
+		if _, _, err := net.SplitHostPort(c.HTTP.HTTPSAddr); err != nil {
+			return fmt.Errorf("invalid https_addr %q: %w", c.HTTP.HTTPSAddr, err)
 		}
 	}
 	return nil

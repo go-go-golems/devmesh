@@ -793,3 +793,75 @@ The implementation also closes the observed stale-removal and lease timing failu
 - Slice A task: `5c9w`.
 - Evidence: `analysis/evidence/08-slice-a-review-probes.txt`.
 - The task is complete after the associated implementation commit; Slice B and C remain open.
+
+## Step 16: Implement Slice B — safe fixed HTTP routes and truthful endpoints
+
+This slice made the supported HTTP path small and explicit. A route has one canonical explicit hostname, and a service’s kind/hostname cannot mutate during a daemon run. HTTP routing selects one current backend snapshot per request and always overwrites the outbound target from that snapshot. This removes the prior double-read failure where a backend change could leave an absolute caller URL in the proxy request.
+
+Configured proxy listeners are now bound in `daemon.New`, before the Unix administrative API is served. A daemon with an occupied required HTTP/HTTPS listener exits rather than reporting a healthy daemon that cannot serve its advertised endpoint. The router builds frontend URLs from the actual public scheme and non-default configured port, and the CLI/SDK preserve `frontend.url` rather than formatting an empty host/port for HTTP services.
+
+### Prompt Context
+**User prompt (verbatim):** see Step 15.
+**Assistant interpretation:** Continue the focused implementation plan with the supported HTTP path, keeping explicit hostnames and avoiding route-migration or backend-protocol machinery.
+**Inferred user intent:** Make real local HTTP use reliable through current interfaces, not build a generalized gateway.
+
+### What I did
+- Replaced `ReverseProxy.Director` with `Rewrite` plus a request-context route snapshot. `ServeHTTP` calls the registry-backed provider once, returns 503 if nil, and `Rewrite` unconditionally uses the selected loopback backend.
+- Removed caller-controlled `X-Forwarded-*` values before calling `SetXForwarded`; preserved the canonical public route host for applications.
+- Added public scheme/port-aware router URLs. HTTP uses `http://host:nondefault-port`; TLS uses `https://host:nondefault-port`.
+- Bound HTTP/HTTPS listeners synchronously in `daemon.New`, closed a previously bound HTTP listener if HTTPS binding fails, and changed `Start` to serve those listeners.
+- Added daemon checks for kind immutability, hostname immutability, canonical hostname conflicts, and malformed explicit HTTP host values.
+- Removed the registry fallback that reused a prior frontend whenever `Frontend.Host` was empty; URL frontends are now written explicitly.
+- Added proxy, daemon, HTTP integration, HTTPS URL, and black-box probe coverage.
+
+### Why
+- The registered backend and the proxy target must be the same request-local value. A single snapshot is simpler and safer than coordinating two provider calls.
+- Rejecting host/kind mutation is intentionally simpler than implementing route migration, stale alias cleanup, or dynamic endpoint updates.
+- Binding first is the same correctness principle used by TCP frontend allocation: a successful startup must own the advertised listener now, not merely schedule a future attempt.
+
+### What worked
+- `internal/proxy.TestRouterSelectsBackendOnce` sends an absolute-form request toward an unintended local server and confirms `200/SAFE` from the registered backend with exactly one provider call.
+- `TestHTTPHostnameConflictAndMutationRejected` confirms duplicate canonical hostnames fail and leave the original route intact.
+- `TestHTTPListenerMustBindBeforeStartupSucceeds` confirms an occupied listener makes `daemon.New` fail.
+- Black-box receipt `analysis/evidence/10-slice-b-cli-api-probes.txt` reports:
+
+  ```text
+  P13 occupied HTTP listener rejected=True socket_created=False
+  P14 public Docker-source rejected=True code=400
+  P15 HTTP registration status=201 url=http://web.test:50801
+  P16 CLI HTTP resolution endpoint=http://web.test:50801
+  P17 public owner replay rejected=True backend_unchanged=True
+  ```
+
+- Full validation passed: `go build`, `go vet`, `go test -race ./... -count=1`, and `make glazed-lint`.
+
+### What didn't work
+- The historical verification probe initially panicked at P04 because it still treated duplicate host acceptance and host mutation as expected behavior. Rewrote it to assert conflict/mutation rejection and a safe one-read proxy result.
+- The old black-box probe assumed an occupied HTTP listener still exposed a healthy Unix API. It now uses two phases: assert failed startup first, then start a healthy daemon for public-API assertions.
+- No production failures remained after updating the evidence programs; these were expected changes to historical probes after correcting the contract.
+
+### What I learned
+- Go’s `httputil.ProxyRequest.SetURL` resets the outbound Host; explicitly restoring the canonical public route host is necessary when applications route on Host.
+- `SetXForwarded` appends existing forwarded values, so removing incoming forwarded headers first is necessary when they are not trusted.
+- URL correctness includes scheme and listener port. A stable hostname alone is not a usable endpoint when devmesh listens on 8088/8443.
+
+### What was tricky to build
+- Listener ownership begins before `Start`, while service shutdown is still context-driven. Binding during `New` made the startup contract truthful without adding a separate readiness service.
+- The router remains dynamic without duplicate reads by carrying a copied backend in request context. The backend is selected once per request; existing TCP behavior remains unchanged.
+
+### What warrants a second pair of eyes
+- Explicit hostname validation is intentionally narrow (no scheme, path, or port); expand only if an actual supported hostname form needs it.
+- HTTPS URL selection currently prefers HTTPS whenever a certificate is configured, even if the separate plain HTTP listener is also enabled. That is intentional for a single public endpoint choice.
+
+### What should be done in the future
+- Implement Slice C: prompt close of active TCP connections, fail-fast persistent port allocation, Unix socket path safety, minimal doctor corrections, and combined acceptance behavior.
+- Do not add aliases, generated names, HTTP backend TLS, ACME, or route migration without a concrete workflow.
+
+### Code review instructions
+- Read `internal/proxy/http.go` (`ServeHTTP`, `Rewrite`), `internal/daemon/daemon.go` (`bindProxyListeners`, HTTP registration validation), then `integration/http_proxy_test.go` and `internal/proxy/http_test.go`.
+- Run `python3 ttmp/2026/09/20/DEVMESH-001--devmesh-implementation-and-intern-analysis-guide/scripts/02-cli-api-probes.py` for isolated binary-level evidence.
+
+### Technical details
+- Slice B task: `nipk`.
+- Evidence: `analysis/evidence/09-slice-b-review-probes.txt` and `analysis/evidence/10-slice-b-cli-api-probes.txt`.
+- The task is complete after the associated implementation commit; Slice C remains open.

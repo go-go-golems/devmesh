@@ -311,7 +311,7 @@ func (d *Daemon) Shutdown(ctx context.Context) error {
 	case <-done:
 	case <-ctx.Done():
 	}
-	d.Runtime.CloseAll()
+	d.Runtime.Shutdown(ctx)
 	if err := d.State.Save(); err != nil {
 		d.logger.Error("state_save_failed", "error", err)
 		return err

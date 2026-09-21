@@ -1,6 +1,7 @@
 package runtime
 
 import (
+	"context"
 	"log/slog"
 	"sync"
 	"time"
@@ -74,11 +75,14 @@ func (m *Manager) RemoveRuntime(name string) bool {
 		return false
 	}
 	_ = rt.Close()
+	rt.CloseActiveConnections()
 	return true
 }
 
-// CloseAll closes every runtime.
-func (m *Manager) CloseAll() {
+// Shutdown closes listeners, promptly closes active client connections, and
+// waits for proxy workers under one caller-supplied deadline. The runtime has
+// already stopped admitting workers before WaitForProxies is called.
+func (m *Manager) Shutdown(ctx context.Context) {
 	m.mu.Lock()
 	rts := make([]*ServiceRuntime, 0, len(m.runtimes))
 	for name, rt := range m.runtimes {
@@ -88,6 +92,14 @@ func (m *Manager) CloseAll() {
 	m.mu.Unlock()
 	for _, rt := range rts {
 		_ = rt.Close()
+	}
+	for _, rt := range rts {
+		rt.CloseActiveConnections()
+	}
+	for _, rt := range rts {
+		if !rt.WaitForProxies(ctx) {
+			m.logger.Warn("proxy_shutdown_timed_out", "service", rt.Name)
+		}
 	}
 }
 

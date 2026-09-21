@@ -1,9 +1,11 @@
 package runtime
 
 import (
+	"fmt"
 	"io"
 	"log/slog"
 	"net"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -100,6 +102,42 @@ func TestAllocateExhausted(t *testing.T) {
 	}
 	if _, ok := err.(*ErrPortExhausted); !ok {
 		t.Fatalf("got %T, want *ErrPortExhausted", err)
+	}
+}
+
+// TestAllocateFailsWhenStateCannotPersist ensures a bound listener is closed
+// and allocation fails rather than advertising a non-durable stable frontend.
+func TestAllocateFailsWhenStateCannotPersist(t *testing.T) {
+	probe, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	port := probe.Addr().(*net.TCPAddr).Port
+	_ = probe.Close()
+
+	dir := t.TempDir()
+	statePath := filepath.Join(dir, "parent", "state.json")
+	st, err := state.Load(statePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "parent"), []byte("not a directory"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	a := NewAllocator("127.0.0.1", port, port, st, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if _, err := a.Allocate("durability.svc", 0); err == nil {
+		t.Fatal("allocation succeeded despite state persistence failure")
+	}
+	// The allocator closed its temporary listener, so the port is available.
+	ln, err := net.Listen("tcp", net.JoinHostPort("127.0.0.1", fmt.Sprintf("%d", port)))
+	if err != nil {
+		t.Fatalf("failed allocation leaked listener on %d: %v", port, err)
+	}
+	_ = ln.Close()
+	// The store is dirty, so retrying the same value does not falsely return
+	// nil without writing it.
+	if err := st.SetPort("durability.svc", port); err == nil {
+		t.Fatal("dirty state retry falsely succeeded")
 	}
 }
 

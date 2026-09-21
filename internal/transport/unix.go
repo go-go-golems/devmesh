@@ -30,7 +30,12 @@ func Listen(socketPath string) (net.Listener, error) {
 	if err := os.MkdirAll(filepath.Dir(socketPath), 0o700); err != nil {
 		return nil, fmt.Errorf("create socket dir: %w", err)
 	}
-	if _, err := os.Stat(socketPath); err == nil {
+	if info, err := os.Lstat(socketPath); err == nil {
+		// Never remove a regular file, directory, or symlink merely because a
+		// Unix dial failed. Stale recovery is only safe for an actual socket.
+		if info.Mode()&os.ModeSocket == 0 || info.Mode()&os.ModeSymlink != 0 {
+			return nil, fmt.Errorf("refusing to replace %s: existing path is not a Unix socket", socketPath)
+		}
 		conn, derr := net.DialTimeout("unix", socketPath, 500*time.Millisecond)
 		if derr == nil {
 			_ = conn.Close()

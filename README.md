@@ -38,6 +38,26 @@ make build
 ./dist/devmesh services resolve test.echo
 ```
 
+## Scripts and managed services
+
+A backend must already be listening before it is registered. For a persistent
+manual registration, leave `register` running; it maintains the lease and
+re-registers after a daemon restart. `--once` is only a diagnostic registration
+that expires after its TTL.
+
+```bash
+# A shell consumer gets exactly one endpoint line and waits at most 20 seconds
+# for a producer to publish a ready backend. This proves registration, not that
+# a database or HTTP application has completed its own readiness sequence.
+ENDPOINT=$(./dist/devmesh services resolve checkout.postgres --raw --wait 20s)
+export DATABASE_URL="postgres://dev:dev@${ENDPOINT}/app"
+```
+
+For HTTP registrations, pass an explicit `--http-host`; resolve returns the
+complete URL including a configured non-default port. One hostname belongs to
+one service during a daemon run. Listener frontends stay reserved until daemon
+shutdown; devmesh does not evict inactive listeners automatically.
+
 ## Development
 
 ```bash

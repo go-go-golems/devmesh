@@ -72,6 +72,16 @@ func RegistrationFromInspect(inspect container.InspectResponse, allowNonLoopback
 	if len(bindings) == 0 {
 		return Registration{}, &ErrNotPublished{Container: containerName, Port: parsed.ContainerPort}
 	}
+	// A safe selected binding is not enough: another binding for the managed
+	// target can still expose the container on the LAN. Refuse any mixed
+	// publication unless the user explicitly opted in to non-loopback ports.
+	if !allowNonLoopback {
+		for _, binding := range bindings {
+			if !isLoopbackIP(binding.HostIP) {
+				return Registration{}, &ErrNonLoopback{Container: containerName, HostIP: binding.HostIP, Port: parsed.ContainerPort}
+			}
+		}
+	}
 
 	// Prefer a loopback binding when several exist.
 	var chosen *binding

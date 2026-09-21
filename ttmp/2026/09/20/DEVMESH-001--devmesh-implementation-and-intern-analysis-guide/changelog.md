@@ -99,3 +99,13 @@ Implemented v2 Slice B: one-snapshot HTTP proxy rewrite, untrusted forwarded-hea
 - /home/manuel/code/wesen/2026-09-20--devmesh/integration/http_proxy_test.go — Hostname/URL integration evidence
 - /home/manuel/code/wesen/2026-09-20--devmesh/internal/daemon/daemon.go — Synchronous proxy listener ownership and route validation
 - /home/manuel/code/wesen/2026-09-20--devmesh/internal/proxy/http.go — One backend snapshot and explicit outbound target
+
+## 2026-09-20
+
+Implemented v2 Slice C: prompt active TCP closure on shutdown; fail-fast durable allocation with dirty retries; regular-file/symlink socket protection; mixed Docker binding refusal; selected doctor socket correction; PostgreSQL query before/after overlapping replacement; scripting docs. Full Docker/race/build/vet/glazed-lint pass.
+
+### Related Files
+
+- /home/manuel/code/wesen/2026-09-20--devmesh/integration/postgres_test.go — Post-replacement PostgreSQL query acceptance
+- /home/manuel/code/wesen/2026-09-20--devmesh/internal/runtime/service.go — Active proxy admission, closure and worker waiting
+- /home/manuel/code/wesen/2026-09-20--devmesh/internal/state/store.go — Durable state semantics and backup failure handling

@@ -48,14 +48,18 @@ func (a *Allocator) Allocate(name string, preferred int) (Allocation, error) {
 		remembered = a.state.Port(name)
 	}
 	if remembered != 0 {
-		if alloc, ok := a.try(name, remembered); ok {
+		if alloc, ok, err := a.try(name, remembered); err != nil {
+			return Allocation{}, err
+		} else if ok {
 			a.logger.Info("frontend_reused", "service", name, "frontend", allocAddr(a.host, remembered))
 			return alloc, nil
 		}
 		a.logger.Warn("frontend_remembered_unavailable", "service", name, "port", remembered)
 	}
 	if preferred != 0 {
-		if alloc, ok := a.try(name, preferred); ok {
+		if alloc, ok, err := a.try(name, preferred); err != nil {
+			return Allocation{}, err
+		} else if ok {
 			a.logger.Info("frontend_allocated", "service", name, "frontend", allocAddr(a.host, preferred), "preferred", true)
 			return alloc, nil
 		}
@@ -70,7 +74,9 @@ func (a *Allocator) Allocate(name string, preferred int) (Allocation, error) {
 		if port == remembered || port == preferred {
 			continue
 		}
-		if alloc, ok := a.try(name, port); ok {
+		if alloc, ok, err := a.try(name, port); err != nil {
+			return Allocation{}, err
+		} else if ok {
 			a.logger.Info("frontend_allocated", "service", name, "frontend", allocAddr(a.host, port))
 			return alloc, nil
 		}
@@ -78,17 +84,22 @@ func (a *Allocator) Allocate(name string, preferred int) (Allocation, error) {
 	return Allocation{}, &ErrPortExhausted{Min: a.min, Max: a.max}
 }
 
-func (a *Allocator) try(name string, port int) (Allocation, bool) {
+func (a *Allocator) try(name string, port int) (Allocation, bool, error) {
 	ln, err := net.Listen("tcp", allocAddr(a.host, port))
 	if err != nil {
-		return Allocation{}, false
+		return Allocation{}, false, nil
 	}
 	if a.state != nil {
 		if err := a.state.SetPort(name, port); err != nil {
+			// A newly allocated stable frontend is not successful until its
+			// remembered assignment is durable. Close this listener rather than
+			// claiming a persistence guarantee we could not make.
+			_ = ln.Close()
 			a.logger.Error("state_save_failed", "service", name, "error", err)
+			return Allocation{}, false, fmt.Errorf("persist frontend assignment for %s: %w", name, err)
 		}
 	}
-	return Allocation{Port: port, Listener: ln}, true
+	return Allocation{Port: port, Listener: ln}, true, nil
 }
 
 func allocAddr(host string, port int) string {

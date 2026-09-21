@@ -58,7 +58,11 @@ func (c *Command) RunIntoGlazeProcessor(ctx context.Context, parsed *values.Valu
 		return err
 	}
 
-	checks := runChecks(ctx, client, transport.DefaultSocketPath())
+	socket := ds.Socket
+	if socket == "" {
+		socket = transport.DefaultSocketPath()
+	}
+	checks := runChecks(ctx, client, socket)
 	failed := false
 	for _, chk := range checks {
 		if chk.Status == "fail" {

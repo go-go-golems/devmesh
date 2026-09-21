@@ -11,9 +11,10 @@ import (
 
 // Store loads, mutates, and atomically persists the state model.
 type Store struct {
-	path string
-	mu   sync.Mutex
-	m    Model
+	path  string
+	mu    sync.Mutex
+	m     Model
+	dirty bool // in-memory state changed but the last durable write failed
 }
 
 // Load reads path. A missing file yields empty state. A corrupt file is
@@ -33,7 +34,9 @@ func Load(path string) (*Store, error) {
 	var m Model
 	if err := json.Unmarshal(data, &m); err != nil {
 		backup := fmt.Sprintf("%s.corrupt.%d", path, time.Now().Unix())
-		_ = os.WriteFile(backup, data, 0o600)
+		if backupErr := os.WriteFile(backup, data, 0o600); backupErr != nil {
+			return nil, fmt.Errorf("state file %s is corrupt and could not be backed up: %w", path, backupErr)
+		}
 		return s, nil
 	}
 	if m.Version > version {
@@ -56,26 +59,38 @@ func (s *Store) Port(name string) int {
 	return s.m.TCPPorts[name]
 }
 
-// SetPort remembers name -> port and persists immediately.
+// SetPort remembers name -> port and persists immediately. If a previous
+// write failed, the dirty flag forces a retry even when the requested value is
+// already in memory; returning nil must mean the state is durable.
 func (s *Store) SetPort(name string, port int) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.m.TCPPorts[name] == port {
+	if s.m.TCPPorts[name] == port && !s.dirty {
 		return nil
 	}
 	s.m.TCPPorts[name] = port
-	return s.saveLocked()
+	s.dirty = true
+	if err := s.saveLocked(); err != nil {
+		return err
+	}
+	s.dirty = false
+	return nil
 }
 
 // Forget removes a remembered assignment.
 func (s *Store) Forget(name string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if _, ok := s.m.TCPPorts[name]; !ok {
+	if _, ok := s.m.TCPPorts[name]; !ok && !s.dirty {
 		return nil
 	}
 	delete(s.m.TCPPorts, name)
-	return s.saveLocked()
+	s.dirty = true
+	if err := s.saveLocked(); err != nil {
+		return err
+	}
+	s.dirty = false
+	return nil
 }
 
 // Snapshot returns a copy of the persisted map.
@@ -93,7 +108,11 @@ func (s *Store) Snapshot() map[string]int {
 func (s *Store) Save() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.saveLocked()
+	if err := s.saveLocked(); err != nil {
+		return err
+	}
+	s.dirty = false
+	return nil
 }
 
 func (s *Store) saveLocked() error {

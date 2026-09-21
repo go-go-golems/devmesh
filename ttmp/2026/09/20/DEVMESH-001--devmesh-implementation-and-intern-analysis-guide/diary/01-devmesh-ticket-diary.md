@@ -865,3 +865,89 @@ Configured proxy listeners are now bound in `daemon.New`, before the Unix admini
 - Slice B task: `nipk`.
 - Evidence: `analysis/evidence/09-slice-b-review-probes.txt` and `analysis/evidence/10-slice-b-cli-api-probes.txt`.
 - The task is complete after the associated implementation commit; Slice C remains open.
+
+## Step 17: Implement Slice C — prompt cleanup, durable allocation, and acceptance evidence
+
+This final focused slice closes the resources devmesh owns without reintroducing a configurable drain policy. TCP runtimes now track accepted client sockets and proxy workers. Shutdown stops listener admission, closes active client sockets promptly, and waits under the existing overall shutdown context. This intentionally favors a quick, deterministic local restart over preserving in-flight transactions through a separate draining lifecycle.
+
+New frontend allocation now treats persistence as part of success. If the remembered port assignment cannot be written, the newly bound listener is closed and registration fails. The state store remembers that the write is dirty so retrying the same value cannot falsely report success. Unix socket stale recovery now refuses to replace a regular file or symlink. The Docker adapter rejects a mixed loopback/wildcard publication for a managed target, rather than selecting one safe binding and ignoring another exposed binding.
+
+### Prompt Context
+**User prompt (verbatim):** see Step 15.
+**Assistant interpretation:** Complete the focused v2 implementation with minimal resource ownership, durability, safety, and supported-workflow acceptance behavior.
+**Inferred user intent:** Finish reliable local workflows without expanding into drain policies, persistence modes, or platform/security frameworks.
+
+### What I did
+- Added runtime connection tracking and proxy wait groups. `runtime.Manager.Shutdown(ctx)` closes listeners, closes active client sockets, and waits for workers with the caller’s existing deadline.
+- Changed daemon shutdown to use the runtime shutdown path.
+- Made allocator persistence failures close the candidate listener and return an error; added state dirty tracking so same-value persistence retries do real I/O.
+- Made corrupt-state backup failure explicit instead of silently continuing without preserving bytes.
+- Added `Lstat` safety checks to reject regular files and symlinks at the Unix socket path.
+- Rejected mixed Docker loopback/wildcard bindings by checking every binding for the managed container target.
+- Corrected `doctor` to inspect the selected `--socket`/`DEVMESH_SOCKET` path rather than always the default path.
+- Extended PostgreSQL acceptance: query through the stable frontend, start replacement B before removing A, remove A, then query through the unchanged frontend again.
+- Updated README and resolve help to document `register` lifetime, `--raw --wait`, explicit HTTP host behavior, and no automatic listener eviction.
+
+### Why
+- Closing a listener alone stops new accepts but leaves existing TCP copies alive. Tracking owned client sockets is enough to interrupt existing `io.Copy` paths; it avoids a complex per-connection drain state machine.
+- A stable frontend promise includes remembered state. A listener with an unsaved assignment is not durable enough to advertise as successful.
+- Socket-file and mixed-publication checks are inexpensive targeted guards with direct data-loss/exposure impact; they do not require a broad platform threat-model project.
+
+### What worked
+- New regression tests passed for persistence failure listener cleanup, dirty-state retry, regular-file/symlink socket refusal, mixed Docker publication refusal, and active TCP shutdown closure.
+- Updated verification receipt `analysis/evidence/11-slice-c-review-probes.txt` reports all historical P01–P12 observations corrected or deliberately deferred. Relevant final lines:
+
+  ```text
+  P08 mixed loopback+wildcard rejected=true
+  P09 regular socket path rejected=true file_preserved=true
+  P11 allocation persistence failure rejected=true ... retry_rejected=true
+  P12 established TCP after daemon Shutdown: read_error=EOF ...
+  ```
+
+- Real Docker acceptance ran explicitly and passed:
+
+  ```text
+  TestDockerDiscoveryAndRecreatePreservesFrontend (1.66s)
+  TestPostgresThroughFrontend (2.12s)
+  ```
+
+  The PostgreSQL test now performs `select 1` through the stable endpoint both before and after the overlapping replacement/removal sequence.
+- Final gate passed:
+
+  ```bash
+  GOWORK=off go build ./...
+  GOWORK=off go vet ./...
+  GOWORK=off go test -race ./... -count=1
+  GOWORK=off make glazed-lint
+  ```
+
+### What didn't work
+- The first active-connection shutdown assertion reported that the connection survived. The test had read only two bytes from the three-byte `A:a` echo response, leaving one buffered byte that made the post-shutdown read appear successful. Changed the test to consume all three bytes; it then observed EOF after shutdown.
+- No production retry/fix loop was required beyond that test correction.
+
+### What I learned
+- Closing the client side of an active proxy connection is sufficient here: `proxy.TCP`’s existing defers close the upstream side once copying unblocks.
+- A state store must distinguish an equal in-memory value from a successfully persisted value; a dirty bit is enough for this single-file store.
+- The important Docker publication safety condition concerns all host bindings for the managed target, not merely the binding devmesh chooses to dial.
+
+### What was tricky to build
+- Preventing `sync.WaitGroup` Add/Wait misuse required closing runtime admission under the same connection mutex used to add proxy workers. This is limited ownership bookkeeping, not a general connection lifecycle framework.
+- The overlapping Docker replacement test starts B before removing A and validates the real PostgreSQL protocol after removal; it is stronger than comparing port metadata alone.
+
+### What warrants a second pair of eyes
+- Promptly closing active local TCP connections is an intentional contract change from the original graceful-drain suggestion. It is appropriate for the focused local tool but should be revisited only if a concrete workflow needs transaction-preserving shutdown.
+- Corrupt-state backup now fails startup if the corrupt bytes cannot be saved aside. This protects the user’s only state copy but may require an explicit recovery command if real users encounter filesystem permission problems.
+
+### What should be done in the future
+- The three v2 slices are complete. Implement the separate CLI-first devctl integration task only after reviewing the dedicated plan: prove Compose-to-shell-launcher behavior before adding optional native wrapper fields.
+- Keep event replay, idle eviction, volatile persistence mode, ACME, generated hostnames, and generalized diagnostics deferred until a concrete user impact meets the v2 escalation rule.
+
+### Code review instructions
+- Read `internal/runtime/service.go` and `manager.go` for admission/closure ordering; then `internal/runtime/allocator.go`, `internal/state/store.go`, and `internal/transport/unix.go`.
+- Review `integration/postgres_test.go` for the post-recreation query acceptance path.
+- Run the final validation gate and the review probe listed above.
+
+### Technical details
+- Slice C task: `zo9w`.
+- Evidence: `analysis/evidence/11-slice-c-review-probes.txt`.
+- The v2 devmesh implementation is complete at the associated commit. The separate devctl integration task remains open.

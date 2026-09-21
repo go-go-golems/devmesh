@@ -209,6 +209,41 @@ func TestTCPProxyRoundTripAndLeaseLifecycle(t *testing.T) {
 	}
 }
 
+func TestShutdownClosesActiveTCPConnections(t *testing.T) {
+	h := startHarness(t, 5*time.Second)
+	backend := prefixEcho(t, "A")
+	var reg api.RegisterResponse
+	if err := h.client.Do(context.Background(), "POST", "/v1/registrations", api.RegisterRequest{Name: "shutdown.svc", Kind: "tcp", Source: "manual", Backend: backendDTO(t, backend)}, &reg); err != nil {
+		t.Fatal(err)
+	}
+	conn, err := net.Dial("tcp", net.JoinHostPort(reg.Frontend.Host, strconv.Itoa(reg.Frontend.Port)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	_ = conn.SetDeadline(time.Now().Add(2 * time.Second))
+	if _, err := conn.Write([]byte("a")); err != nil {
+		t.Fatal(err)
+	}
+	buf := make([]byte, 3)
+	if _, err := io.ReadFull(conn, buf); err != nil {
+		t.Fatal(err)
+	}
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if err := h.d.Shutdown(shutdownCtx); err != nil {
+		t.Fatal(err)
+	}
+	_ = conn.SetDeadline(time.Now().Add(time.Second))
+	_, writeErr := conn.Write([]byte("b"))
+	if writeErr == nil {
+		_, writeErr = conn.Read(buf)
+	}
+	if writeErr == nil {
+		t.Fatal("active TCP connection survived daemon shutdown")
+	}
+}
+
 func TestBackendReplacementKeepsFrontend(t *testing.T) {
 	h := startHarness(t, 5*time.Second)
 	ctx := context.Background()

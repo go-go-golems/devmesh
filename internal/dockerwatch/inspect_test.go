@@ -70,6 +70,19 @@ func TestRegistrationFromInspectRefusesNonLoopback(t *testing.T) {
 	}
 }
 
+func TestRegistrationFromInspectRefusesMixedPublication(t *testing.T) {
+	inspect := inspectWith(enabledLabels(), "127.0.0.1", "49173")
+	inspect.NetworkSettings.Ports[nat.Port("5432/tcp")] = append(
+		inspect.NetworkSettings.Ports[nat.Port("5432/tcp")],
+		nat.PortBinding{HostIP: "0.0.0.0", HostPort: "49174"},
+	)
+	_, err := RegistrationFromInspect(inspect, false)
+	var nl *ErrNonLoopback
+	if !errors.As(err, &nl) {
+		t.Fatalf("mixed publication got %v, want ErrNonLoopback", err)
+	}
+}
+
 func TestRegistrationFromInspectNotPublished(t *testing.T) {
 	_, err := RegistrationFromInspect(inspectWith(enabledLabels(), "", ""), false)
 	var np *ErrNotPublished

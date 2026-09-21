@@ -10,6 +10,8 @@ Commands:
 Flags:
 - format
 - output-fields
+- raw
+- wait
 IsTopLevel: false
 IsTemplate: false
 ShowPerDefault: true
@@ -34,12 +36,20 @@ devmesh services resolve checkout.postgres --format json
 ## Bare endpoint for shell substitution
 
 ```bash
-ENDPOINT=$(devmesh services resolve checkout.postgres \
-  --output-fields endpoint --format jsonl | sed 's/.*"endpoint":"\([^"]*\)".*/\1/')
+ENDPOINT=$(devmesh services resolve checkout.postgres --raw --wait 20s)
 ```
 
-`--format jsonl` emits one compact JSON object per line; `--output-fields`
-projects only the endpoint.
+`--raw` emits exactly one frontend endpoint plus a newline: `host:port` for a
+TCP service or a complete URL for an HTTP service. `--wait` retries unknown or
+backendless services until its deadline. It proves that devmesh has a ready
+backend registration; it is not an application-specific health check.
+
+Without `--raw`, keep Glazed structured output for JSON, JSONL, CSV, or table
+consumers:
+
+```bash
+devmesh services resolve checkout.postgres --format json
+```
 
 ## Listing everything
 
@@ -52,8 +62,9 @@ devmesh services list --format csv
 | Problem | Cause | Solution |
 | --- | --- | --- |
 | Empty table | No services registered | Start a producer or register manually. |
-| `unavailable` status | Frontend reserved, no live backend | Restart the producer. |
-| `404` from resolve | Name is unknown to the daemon | Check spelling and `devmesh services list`. |
+| `unavailable` status | Frontend reserved, no live backend | Restart the producer, or use `--wait` in a bounded launcher. |
+| `404` from resolve | Name is unknown to the daemon | Check spelling and `devmesh services list`; `--wait` can tolerate a producer still starting. |
+| `--raw` exits nonzero | The service was unavailable when the deadline elapsed | Do not use an unavailable endpoint; inspect the producer or extend the bounded wait. |
 
 ## See Also
 

@@ -29,6 +29,8 @@ import (
 // Version is the daemon/CLI version string.
 const Version = "0.1.0"
 
+const httpReadHeaderTimeout = 10 * time.Second
+
 // Daemon owns all in-process state.
 type Daemon struct {
 	cfg    config.Config
@@ -191,12 +193,16 @@ func (d *Daemon) Start(ctx context.Context) {
 
 	if d.httpListener != nil {
 		d.wg.Add(1)
-		go d.serveProxy(ctx, "http", d.httpListener, &http.Server{Handler: d.HTTP})
+		go d.serveProxy(ctx, "http", d.httpListener, &http.Server{
+			Handler:           d.HTTP,
+			ReadHeaderTimeout: httpReadHeaderTimeout,
+		})
 	}
 	if d.httpsListener != nil {
 		d.wg.Add(1)
 		go d.serveProxy(ctx, "https", d.httpsListener, &http.Server{
-			Handler: d.HTTP,
+			Handler:           d.HTTP,
+			ReadHeaderTimeout: httpReadHeaderTimeout,
 			TLSConfig: &tls.Config{
 				Certificates: []tls.Certificate{*d.tlsCert},
 				MinVersion:   tls.VersionTLS12,
@@ -210,6 +216,7 @@ func (d *Daemon) Start(ctx context.Context) {
 
 func (d *Daemon) serveProxy(ctx context.Context, scheme string, ln net.Listener, srv *http.Server) {
 	defer d.wg.Done()
+	// #nosec G118 -- this goroutine intentionally creates a bounded shutdown context after parent cancellation.
 	go func() {
 		<-ctx.Done()
 		sctx, cancel := context.WithTimeout(context.Background(), d.cfg.ShutdownTimeout)

@@ -1,6 +1,6 @@
 module github.com/go-go-golems/devmesh
 
-go 1.26.1
+go 1.26.6
 
 require (
 	github.com/go-go-golems/glazed v1.4.4

@@ -17,6 +17,8 @@ make test
 make test-race
 make lint
 make logcopter-check
+make govulncheck
+make gosec
 goreleaser check --config .goreleaser.yaml
 goreleaser check --soft --config .goreleaser.yaml
 ```

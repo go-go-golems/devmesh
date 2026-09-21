@@ -34,6 +34,7 @@ func Load(path string) (*Store, error) {
 	var m Model
 	if err := json.Unmarshal(data, &m); err != nil {
 		backup := fmt.Sprintf("%s.corrupt.%d", path, time.Now().Unix())
+		// #nosec G703 -- backup remains adjacent to the configured state file with a fixed suffix.
 		if backupErr := os.WriteFile(backup, data, 0o600); backupErr != nil {
 			return nil, fmt.Errorf("state file %s is corrupt and could not be backed up: %w", path, backupErr)
 		}

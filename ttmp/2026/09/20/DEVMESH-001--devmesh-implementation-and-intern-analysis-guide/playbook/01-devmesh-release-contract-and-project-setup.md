@@ -14,6 +14,8 @@ DocType: playbook
 Intent: long-term
 Owners: []
 RelatedFiles:
+    - Path: repo://.github/workflows/dependency-scanning.yml
+      Note: Hosted vulnerability and GoSec checks
     - Path: repo://.github/workflows/release.yaml
       Note: Split OIDC builder and shared publisher workflow
     - Path: repo://.goreleaser.yaml
@@ -22,6 +24,10 @@ RelatedFiles:
       Note: Contributor and release-boundary rules
     - Path: repo://Makefile
       Note: Reproducible local validation and release targets
+    - Path: repo://scripts/verify_govulncheck.py
+      Note: Narrow JSON-based reachable-vulnerability gate
+    - Path: repo://security/govulncheck-exceptions.md
+      Note: Reviewed no-fix Docker Engine advisory disposition
 ExternalSources:
     - /home/manuel/code/wesen/go-go-golems/go-go-parc/Research/playbooks/infra/PLAYBOOK - Vault Backed Go Binary Releases.md
 Summary: Project/release setup, authorization boundaries, validation commands, and the first-release prerequisite for Devmesh.
@@ -64,6 +70,8 @@ GORELEASER_ARGS='--skip=sign --snapshot --clean' \
 
 `logcopter_generate.go` is the generator entry point. Generated `logcopter.go` files are tracked source, not disposable build output. Regenerate them with `make logcopter-generate` after changing package structure or logging declarations, then require `make logcopter-check` to pass.
 
+The module minimum is Go `1.26.6`, selected to receive the standard-library vulnerability fixes reported by Govulncheck. Run `make govulncheck` and `make gosec` in addition to the normal development gate.
+
 ## CI contract
 
 The checked-in workflows are intentionally separated by purpose:
@@ -78,6 +86,8 @@ The checked-in workflows are intentionally separated by purpose:
 | `release.yaml` | push of a `v*` tag | Split GoReleaser builds and one final publisher. |
 
 CI intentionally does not start Docker or publish a release on ordinary pushes. Docker acceptance remains a local/controlled integration check because it depends on a daemon and image availability. The real PostgreSQL recreate test remains in the repository’s integration suite and is run in the project validation gate when Docker is available.
+
+The first-push TruffleHog case is guarded because GitHub supplies an all-zero previous SHA and the scanner requires two different commits. Later pushes and pull requests scan an explicit before/after or base/head range. The Govulncheck verifier accepts only `GO-2026-4883` and `GO-2026-4887`, two no-fix Docker Engine plugin advisories that Devmesh reaches through its local Docker client dependency; their scope, exposure analysis, and removal condition are recorded in `security/govulncheck-exceptions.md`. Any other reachable advisory fails CI.
 
 ## Release authorization boundary
 
@@ -138,6 +148,8 @@ make test-race             PASS
 make logcopter-check       PASS
 make build                 PASS
 make build-bin             PASS
+make govulncheck           PASS (two documented no-fix Docker Engine exceptions)
+make gosec                 PASS
 goreleaser check           PASS
 goreleaser check --soft    PASS
 snapshot GoReleaser build  PASS

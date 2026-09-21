@@ -214,7 +214,8 @@ func (h *registrationHandle) heartbeatLoop(ctx context.Context) {
 
 // jitter spreads retry attempts by +/-20%.
 func jitter(d time.Duration) time.Duration {
-	f := 0.8 + 0.4*rand.Float64() //nolint:gosec // jitter does not need crypto strength
+	// #nosec G404 -- retry jitter does not require unpredictable bytes.
+	f := 0.8 + 0.4*rand.Float64()
 	return time.Duration(float64(d) * f)
 }
 

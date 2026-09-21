@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	devmesh "github.com/go-go-golems/devmesh/pkg/devmesh"
 )
@@ -31,7 +32,8 @@ func main() {
 
 	log.Printf("backend: %s", ln.Addr())
 	log.Printf("stable frontend: %s", ln.Registration.Endpoint())
-	if err := http.Serve(ln, mux); err != nil && ctx.Err() == nil {
+	srv := &http.Server{Handler: mux, ReadHeaderTimeout: 10 * time.Second}
+	if err := srv.Serve(ln); err != nil && ctx.Err() == nil {
 		log.Fatal(err)
 	}
 }

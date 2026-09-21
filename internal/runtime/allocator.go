@@ -109,5 +109,6 @@ func allocAddr(host string, port int) string {
 func startOffset(name string, size int) int {
 	h := fnv.New32a()
 	_, _ = h.Write([]byte(name))
-	return int(h.Sum32() % uint32(size))
+	// #nosec G115 -- config validation constrains the positive frontend range to TCP ports.
+	return int(uint64(h.Sum32()) % uint64(size))
 }

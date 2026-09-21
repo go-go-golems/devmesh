@@ -164,7 +164,10 @@ func (c *ServeCommand) Run(ctx context.Context, parsed *values.Values) error {
 	defer transport.RemoveSocket(cfg.Socket)
 
 	srv := api.NewServer(d, logger)
-	httpSrv := &http.Server{Handler: srv.Handler()}
+	httpSrv := &http.Server{
+		Handler:           srv.Handler(),
+		ReadHeaderTimeout: 10 * time.Second,
+	}
 
 	d.Start(ctx)
 

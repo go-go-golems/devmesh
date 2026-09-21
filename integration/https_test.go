@@ -62,7 +62,7 @@ func TestHTTPSProxyWithExistingCertificate(t *testing.T) {
 	h := startHarnessTLS(t, 5*time.Second, certFile, keyFile)
 
 	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		io.WriteString(w, "TLS")
+		_, _ = io.WriteString(w, "TLS")
 	}))
 	defer backend.Close()
 	reg := registerHTTP(t, h, "checkout.api", "api-checkout.test", strings.TrimPrefix(backend.URL, "http://"))

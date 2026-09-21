@@ -17,13 +17,13 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/wesen/devmesh/internal/config"
-	"github.com/wesen/devmesh/internal/dockerwatch"
-	"github.com/wesen/devmesh/internal/lease"
-	"github.com/wesen/devmesh/internal/proxy"
-	"github.com/wesen/devmesh/internal/registry"
-	"github.com/wesen/devmesh/internal/runtime"
-	"github.com/wesen/devmesh/internal/state"
+	"github.com/go-go-golems/devmesh/internal/config"
+	"github.com/go-go-golems/devmesh/internal/dockerwatch"
+	"github.com/go-go-golems/devmesh/internal/lease"
+	"github.com/go-go-golems/devmesh/internal/proxy"
+	"github.com/go-go-golems/devmesh/internal/registry"
+	"github.com/go-go-golems/devmesh/internal/runtime"
+	"github.com/go-go-golems/devmesh/internal/state"
 )
 
 // Version is the daemon/CLI version string.

@@ -6,7 +6,7 @@ import (
 	"log/slog"
 	"net"
 
-	"github.com/wesen/devmesh/internal/state"
+	"github.com/go-go-golems/devmesh/internal/state"
 )
 
 // ErrPortExhausted indicates no bindable port remained in the configured range.
@@ -37,8 +37,8 @@ type Allocator struct {
 }
 
 // NewAllocator builds an allocator. min/max must be a valid inclusive range.
-func NewAllocator(host string, min, max int, st *state.Store, logger *slog.Logger) *Allocator {
-	return &Allocator{host: host, min: min, max: max, state: st, logger: logger}
+func NewAllocator(host string, minPort, maxPort int, st *state.Store, logger *slog.Logger) *Allocator {
+	return &Allocator{host: host, min: minPort, max: maxPort, state: st, logger: logger}
 }
 
 // Allocate binds and returns a frontend listener for name.

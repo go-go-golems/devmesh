@@ -1,0 +1,97 @@
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  goreleaser-linux:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - run: git fetch --force --tags
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Read build-only GoReleaser credential
+        uses: hashicorp/vault-action@892a26828f195e65540a40b4768ae4571f51ebfc # v4.0.0
+        with:
+          url: https://vault.yolo.scapegoat.dev
+          method: jwt
+          path: github-actions
+          role: release-devmesh-builder
+          jwtGithubAudience: https://vault.yolo.scapegoat.dev
+          secrets: |
+            kv/data/ci/release/shared/goreleaser-pro license_key | GORELEASER_KEY ;
+      - uses: goreleaser/goreleaser-action@v7
+        with:
+          distribution: goreleaser-pro
+          version: "~> v2"
+          args: release --clean --split
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GORELEASER_KEY: ${{ env.GORELEASER_KEY }}
+          GGOOS: linux
+      - uses: actions/upload-artifact@v4
+        with:
+          name: devmesh-dist-linux
+          path: dist
+
+  goreleaser-darwin:
+    runs-on: macos-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - run: git fetch --force --tags
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Read build-only GoReleaser credential
+        uses: hashicorp/vault-action@892a26828f195e65540a40b4768ae4571f51ebfc # v4.0.0
+        with:
+          url: https://vault.yolo.scapegoat.dev
+          method: jwt
+          path: github-actions
+          role: release-devmesh-builder
+          jwtGithubAudience: https://vault.yolo.scapegoat.dev
+          secrets: |
+            kv/data/ci/release/shared/goreleaser-pro license_key | GORELEASER_KEY ;
+      - uses: goreleaser/goreleaser-action@v7
+        with:
+          distribution: goreleaser-pro
+          version: "~> v2"
+          args: release --clean --split
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GORELEASER_KEY: ${{ env.GORELEASER_KEY }}
+          GGOOS: darwin
+      - uses: actions/upload-artifact@v4
+        with:
+          name: devmesh-dist-darwin
+          path: dist
+
+  publish:
+    needs: [goreleaser-linux, goreleaser-darwin]
+    permissions:
+      contents: write
+      id-token: write
+    uses: go-go-golems/infra-tooling/.github/workflows/publish-goreleaser-release.yml@main
+    with:
+      linux_artifact: devmesh-dist-linux
+      darwin_artifact: devmesh-dist-darwin
+      credential_profile: homebrew-fury
+      vault_role: release-devmesh-publisher

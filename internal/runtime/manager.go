@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/wesen/devmesh/internal/registry"
+	"github.com/go-go-golems/devmesh/internal/registry"
 )
 
 // Manager bridges registry metadata and live listeners. Runtime creation and

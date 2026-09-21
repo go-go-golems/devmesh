@@ -19,10 +19,10 @@ import (
 	"github.com/go-go-golems/glazed/pkg/cmds/values"
 	"github.com/spf13/cobra"
 
-	"github.com/wesen/devmesh/internal/api"
-	"github.com/wesen/devmesh/internal/config"
-	"github.com/wesen/devmesh/internal/daemon"
-	"github.com/wesen/devmesh/internal/transport"
+	"github.com/go-go-golems/devmesh/internal/api"
+	"github.com/go-go-golems/devmesh/internal/config"
+	"github.com/go-go-golems/devmesh/internal/daemon"
+	"github.com/go-go-golems/devmesh/internal/transport"
 )
 
 // ServeSettings holds every daemon configuration field. Field names define the

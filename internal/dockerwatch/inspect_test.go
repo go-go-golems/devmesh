@@ -19,7 +19,8 @@ func inspectWith(labels map[string]string, hostIP, hostPort string) container.In
 			Name:  "/checkout-db-1",
 			State: &container.State{Running: true},
 		},
-		Config:          &container.Config{Labels: labels},
+		Config: &container.Config{Labels: labels},
+		//nolint:staticcheck // Docker v28 exposes published ports through the deprecated embedded field; production code supports that API version.
 		NetworkSettings: &container.NetworkSettings{NetworkSettingsBase: container.NetworkSettingsBase{Ports: ports}},
 	}
 }

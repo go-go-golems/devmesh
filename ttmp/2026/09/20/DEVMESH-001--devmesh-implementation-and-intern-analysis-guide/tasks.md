@@ -14,3 +14,5 @@
 - [x] V2 Slice C: prompt resource cleanup, fail-fast persistence, cheap safety guards and combined acceptance; stop at supported workflow, defer broad hardening <!-- t:zo9w -->
 - [x] Revise design to focused simplification-first v2 and upload separately without replacing v1 annotations <!-- t:xd3x -->
 - [x] CLI-first devctl integration after Slice A: reliable foreground register, resolve --raw --wait, and Compose-to-API launcher example; native wrapper fields deferred until a concrete application needs them <!-- t:dha6 -->
+- [x] Retrofit Devmesh as a go-go-golems release-ready binary project with CI, GoReleaser, logcopter, and a Vault-backed release contract <!-- t:4lvq -->
+- [ ] Apply reviewed Terraform release roles and prove a controlled v0.1.0 Devmesh release before promising binary installation <!-- t:kt4j -->

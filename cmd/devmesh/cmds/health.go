@@ -3,12 +3,12 @@ package cmds
 import (
 	"context"
 
+	"github.com/go-go-golems/devmesh/cmd/devmesh/cmds/daemonconn"
+	"github.com/go-go-golems/devmesh/internal/api"
 	"github.com/go-go-golems/glazed/pkg/cmds"
 	"github.com/go-go-golems/glazed/pkg/cmds/values"
 	"github.com/go-go-golems/glazed/pkg/middlewares"
 	"github.com/go-go-golems/glazed/pkg/types"
-	"github.com/wesen/devmesh/cmd/devmesh/cmds/daemonconn"
-	"github.com/wesen/devmesh/internal/api"
 )
 
 // HealthCommand reports daemon health.

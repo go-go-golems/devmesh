@@ -10,15 +10,15 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/go-go-golems/devmesh/cmd/devmesh/cmds/daemonconn"
+	"github.com/go-go-golems/devmesh/internal/api"
+	devmesh "github.com/go-go-golems/devmesh/pkg/devmesh"
 	"github.com/go-go-golems/glazed/pkg/cmds"
 	"github.com/go-go-golems/glazed/pkg/cmds/fields"
 	"github.com/go-go-golems/glazed/pkg/cmds/schema"
 	"github.com/go-go-golems/glazed/pkg/cmds/values"
 	"github.com/go-go-golems/glazed/pkg/middlewares"
 	"github.com/go-go-golems/glazed/pkg/types"
-	"github.com/wesen/devmesh/cmd/devmesh/cmds/daemonconn"
-	"github.com/wesen/devmesh/internal/api"
-	devmesh "github.com/wesen/devmesh/pkg/devmesh"
 )
 
 // Settings are the `register` flags.

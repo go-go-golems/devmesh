@@ -6,7 +6,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/wesen/devmesh/internal/config"
+	"github.com/go-go-golems/devmesh/internal/config"
 )
 
 func TestResolveConfigPathFromEnv(t *testing.T) {

@@ -1,0 +1,3 @@
+package devmesh
+
+//go:generate go tool logcopter-gen -area-prefix go-go-golems.devmesh -strip-prefix github.com/go-go-golems/devmesh ./cmd/... ./internal/... ./pkg/...

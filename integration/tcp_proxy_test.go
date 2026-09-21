@@ -12,11 +12,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/wesen/devmesh/internal/api"
-	"github.com/wesen/devmesh/internal/config"
-	"github.com/wesen/devmesh/internal/daemon"
-	"github.com/wesen/devmesh/internal/registry"
-	"github.com/wesen/devmesh/internal/transport"
+	"github.com/go-go-golems/devmesh/internal/api"
+	"github.com/go-go-golems/devmesh/internal/config"
+	"github.com/go-go-golems/devmesh/internal/daemon"
+	"github.com/go-go-golems/devmesh/internal/registry"
+	"github.com/go-go-golems/devmesh/internal/transport"
 )
 
 type harness struct {
@@ -33,7 +33,7 @@ func freeBase(t *testing.T) int {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer ln.Close()
+	defer func() { _ = ln.Close() }()
 	return ln.Addr().(*net.TCPAddr).Port
 }
 
@@ -118,7 +118,7 @@ func prefixEcho(t *testing.T, prefix string) string {
 				return
 			}
 			go func(c net.Conn) {
-				defer c.Close()
+				defer func() { _ = c.Close() }()
 				buf := make([]byte, 4096)
 				n, _ := c.Read(buf)
 				_, _ = c.Write(append([]byte(prefix+":"), buf[:n]...))
@@ -144,7 +144,7 @@ func dialAndRead(t *testing.T, addr, payload string) string {
 	if err != nil {
 		t.Fatalf("dial %s: %v", addr, err)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 	_ = conn.SetDeadline(time.Now().Add(2 * time.Second))
 	if _, err := conn.Write([]byte(payload)); err != nil {
 		t.Fatal(err)
@@ -220,7 +220,7 @@ func TestShutdownClosesActiveTCPConnections(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 	_ = conn.SetDeadline(time.Now().Add(2 * time.Second))
 	if _, err := conn.Write([]byte("a")); err != nil {
 		t.Fatal(err)

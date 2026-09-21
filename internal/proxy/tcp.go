@@ -8,7 +8,7 @@ import (
 	"net"
 	"time"
 
-	"github.com/wesen/devmesh/internal/registry"
+	"github.com/go-go-golems/devmesh/internal/registry"
 )
 
 // closeWriter is implemented by *net.TCPConn and used to half-close so that

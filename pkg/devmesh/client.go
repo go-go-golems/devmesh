@@ -9,8 +9,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/wesen/devmesh/internal/api"
-	"github.com/wesen/devmesh/internal/transport"
+	"github.com/go-go-golems/devmesh/internal/api"
+	"github.com/go-go-golems/devmesh/internal/transport"
 )
 
 // Handle is a live registration. Endpoint returns the stable frontend.

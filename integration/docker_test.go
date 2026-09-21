@@ -11,8 +11,8 @@ import (
 	"github.com/docker/docker/api/types/image"
 	"github.com/docker/go-connections/nat"
 
-	"github.com/wesen/devmesh/internal/api"
-	"github.com/wesen/devmesh/internal/dockerwatch"
+	"github.com/go-go-golems/devmesh/internal/api"
+	"github.com/go-go-golems/devmesh/internal/dockerwatch"
 )
 
 const testImage = "postgres:17"

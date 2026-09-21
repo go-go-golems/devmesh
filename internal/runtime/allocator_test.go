@@ -9,16 +9,16 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/wesen/devmesh/internal/state"
+	"github.com/go-go-golems/devmesh/internal/state"
 )
 
-func testAllocator(t *testing.T, min, max int) *Allocator {
+func testAllocator(t *testing.T, minPort, maxPort int) *Allocator {
 	t.Helper()
 	st, err := state.Load(filepath.Join(t.TempDir(), "state.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	return NewAllocator("127.0.0.1", min, max, st, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	return NewAllocator("127.0.0.1", minPort, maxPort, st, slog.New(slog.NewTextHandler(io.Discard, nil)))
 }
 
 func TestAllocatePreferredFree(t *testing.T) {
@@ -35,7 +35,7 @@ func TestAllocatePreferredFree(t *testing.T) {
 	if err != nil {
 		t.Fatalf("allocate: %v", err)
 	}
-	defer alloc.Listener.Close()
+	defer func() { _ = alloc.Listener.Close() }()
 	if alloc.Port != port {
 		t.Fatalf("got port %d, want %d", alloc.Port, port)
 	}
@@ -46,7 +46,7 @@ func TestAllocateFallbackWhenPreferredOccupied(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer occupied.Close()
+	defer func() { _ = occupied.Close() }()
 	used := occupied.Addr().(*net.TCPAddr).Port
 
 	a := testAllocator(t, used, used+2)
@@ -54,7 +54,7 @@ func TestAllocateFallbackWhenPreferredOccupied(t *testing.T) {
 	if err != nil {
 		t.Fatalf("allocate: %v", err)
 	}
-	defer alloc.Listener.Close()
+	defer func() { _ = alloc.Listener.Close() }()
 	if alloc.Port == used {
 		t.Fatalf("allocator returned occupied preferred port %d", used)
 	}
@@ -80,7 +80,7 @@ func TestAllocateReusesRemembered(t *testing.T) {
 	if err != nil {
 		t.Fatalf("allocate: %v", err)
 	}
-	defer alloc.Listener.Close()
+	defer func() { _ = alloc.Listener.Close() }()
 	if alloc.Port != port {
 		t.Fatalf("got %d, want remembered %d", alloc.Port, port)
 	}
@@ -92,7 +92,7 @@ func TestAllocateExhausted(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer l1.Close()
+	defer func() { _ = l1.Close() }()
 	p1 := l1.Addr().(*net.TCPAddr).Port
 
 	a := testAllocator(t, p1, p1)
@@ -150,7 +150,7 @@ func TestAllocationsAreDistinct(t *testing.T) {
 		if err != nil {
 			t.Fatalf("allocate %d: %v", i, err)
 		}
-		defer alloc.Listener.Close()
+		defer func() { _ = alloc.Listener.Close() }()
 		if seen[alloc.Port] {
 			t.Fatalf("duplicate allocation port %d", alloc.Port)
 		}

@@ -11,7 +11,7 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/wesen/devmesh/internal/registry"
+	"github.com/go-go-golems/devmesh/internal/registry"
 )
 
 func testHTTPLogger() *slog.Logger { return slog.New(slog.NewTextHandler(io.Discard, nil)) }

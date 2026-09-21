@@ -11,7 +11,7 @@ import (
 	"os/signal"
 	"syscall"
 
-	devmesh "github.com/wesen/devmesh/pkg/devmesh"
+	devmesh "github.com/go-go-golems/devmesh/pkg/devmesh"
 )
 
 func main() {
@@ -22,7 +22,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("devmesh registration failed: %v", err)
 	}
-	defer ln.Close()
+	defer func() { _ = ln.Close() }()
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {

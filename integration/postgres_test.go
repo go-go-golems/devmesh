@@ -9,7 +9,7 @@ import (
 	"github.com/docker/docker/api/types/container"
 	"github.com/jackc/pgx/v5"
 
-	"github.com/wesen/devmesh/internal/api"
+	"github.com/go-go-golems/devmesh/internal/api"
 )
 
 // TestPostgresThroughFrontend is the end-to-end acceptance test: a labeled
@@ -81,7 +81,7 @@ func queryOne(t *testing.T, ctx context.Context, dsn string) {
 	if err != nil {
 		t.Fatalf("pgx connect through %s: %v", dsn, err)
 	}
-	defer conn.Close(context.Background())
+	defer func() { _ = conn.Close(context.Background()) }()
 	var one int
 	if err := conn.QueryRow(ctx, "select 1").Scan(&one); err != nil {
 		t.Fatalf("select 1 through devmesh: %v", err)

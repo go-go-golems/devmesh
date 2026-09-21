@@ -11,7 +11,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/wesen/devmesh/internal/registry"
+	"github.com/go-go-golems/devmesh/internal/registry"
 )
 
 // BackendProvider returns the current backend for a route, or nil when the
@@ -111,7 +111,7 @@ func (r *Router) Lookup(hostname string) (BackendProvider, bool) {
 // non-default listener port is part of the consumer contract.
 func (r *Router) FrontendURL(hostname string) string {
 	host := normalizeHost(hostname)
-	if r.port > 0 && !((r.scheme == "http" && r.port == 80) || (r.scheme == "https" && r.port == 443)) {
+	if r.port > 0 && (r.scheme != "http" || r.port != 80) && (r.scheme != "https" || r.port != 443) {
 		host = net.JoinHostPort(host, strconv.Itoa(r.port))
 	}
 	return (&url.URL{Scheme: r.scheme, Host: host}).String()

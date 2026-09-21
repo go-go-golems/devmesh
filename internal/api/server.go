@@ -6,7 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 
-	"github.com/wesen/devmesh/internal/daemon"
+	"github.com/go-go-golems/devmesh/internal/daemon"
 )
 
 // Server owns the API routes.

@@ -10,9 +10,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/wesen/devmesh/internal/api"
-	"github.com/wesen/devmesh/internal/daemon"
-	"github.com/wesen/devmesh/internal/registry"
+	"github.com/go-go-golems/devmesh/internal/api"
+	"github.com/go-go-golems/devmesh/internal/daemon"
+	"github.com/go-go-golems/devmesh/internal/registry"
 )
 
 func httpGet(t *testing.T, addr, host string) (int, string) {
@@ -47,11 +47,11 @@ func TestHTTPProxyRoutesByHost(t *testing.T) {
 	h := startHarnessHTTP(t, 5*time.Second)
 
 	backendA := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		fmt.Fprint(w, "A")
+		_, _ = fmt.Fprint(w, "A")
 	}))
 	defer backendA.Close()
 	backendB := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		fmt.Fprint(w, "B")
+		_, _ = fmt.Fprint(w, "B")
 	}))
 	defer backendB.Close()
 

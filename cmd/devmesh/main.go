@@ -9,8 +9,8 @@ import (
 	help_cmd "github.com/go-go-golems/glazed/pkg/help/cmd"
 	"github.com/spf13/cobra"
 
-	"github.com/wesen/devmesh/cmd/devmesh/cmds"
-	"github.com/wesen/devmesh/pkg/doc"
+	"github.com/go-go-golems/devmesh/cmd/devmesh/cmds"
+	"github.com/go-go-golems/devmesh/pkg/doc"
 )
 
 func main() {

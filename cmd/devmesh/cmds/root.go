@@ -6,9 +6,9 @@ import (
 	"github.com/go-go-golems/glazed/pkg/cmds"
 	"github.com/spf13/cobra"
 
-	"github.com/wesen/devmesh/cmd/devmesh/cmds/doctor"
-	"github.com/wesen/devmesh/cmd/devmesh/cmds/register"
-	"github.com/wesen/devmesh/cmd/devmesh/cmds/services"
+	"github.com/go-go-golems/devmesh/cmd/devmesh/cmds/doctor"
+	"github.com/go-go-golems/devmesh/cmd/devmesh/cmds/register"
+	"github.com/go-go-golems/devmesh/cmd/devmesh/cmds/services"
 )
 
 // AddCommands builds and mounts every devmesh CLI command on root.

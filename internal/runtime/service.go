@@ -8,8 +8,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/wesen/devmesh/internal/proxy"
-	"github.com/wesen/devmesh/internal/registry"
+	"github.com/go-go-golems/devmesh/internal/proxy"
+	"github.com/go-go-golems/devmesh/internal/registry"
 )
 
 // ServiceRuntime owns exactly one bound frontend listener and the current

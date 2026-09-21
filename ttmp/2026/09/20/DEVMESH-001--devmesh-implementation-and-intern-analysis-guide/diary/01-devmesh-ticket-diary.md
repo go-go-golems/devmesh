@@ -1013,3 +1013,73 @@ This is deliberately not a dependency graph, plugin-held registration, devmesh p
 - Task: `dha6`.
 - Evidence: `analysis/evidence/12-devctl-compose-smoke.txt`.
 - No devctl repository files changed; the integration is an executable devmesh example.
+
+## Step 19: Retrofit Devmesh as a go-go-golems release-ready project
+
+The next concrete prerequisite for a reusable native devctl wrapper is a Devmesh distribution users can install independently of this checkout. I converted the existing local repository into the public `go-go-golems/devmesh` project rather than creating another source tree or preserving the temporary `github.com/wesen/devmesh` module path. The change adds standard build, lint, hooks, CI, generated logging, release configuration, and a documented authorization boundary while preserving the implemented service behavior.
+
+### Prompt Context
+**User prompt (verbatim):** "ok, please setup devmesh as a proper go-go-golems project then, look at ~/code/wesen/go-go-golems/go-go-template (and see skills and other projects like devctl itself)."
+**Assistant interpretation:** Retrofit the existing implementation to the organization’s normal Go binary project and release conventions; do not discard the working code merely to start from a blank template.
+**Inferred user intent:** Make it possible for Devmesh to become an independently installed tool before considering an optional devctl native wrapper.
+
+### What I did
+- Created the public upstream repository `https://github.com/go-go-golems/devmesh` and set it as this checkout’s `origin`; its immutable numeric GitHub repository ID is `1378931603`.
+- Migrated the module and all Go imports from `github.com/wesen/devmesh` to `github.com/go-go-golems/devmesh`, including examples, commands, integration tests, internal packages, and ticket-local executable probe source.
+- Applied the go-go-golems scaffold baseline while preserving the substantive existing README. Added `AGENT.md`, MIT `LICENSE`, pinned `.golangci-lint-version` and `.golangci.yml`, `lefthook.yml`, `logcopter_generate.go`, generated `logcopter.go` metadata, standard Make targets, CI/security workflows, and GoReleaser configuration.
+- Kept Devmesh’s two-binary contract explicit: `make build-bin` creates `dist/devmesh` and `dist/devmeshd`; GoReleaser archives, packages, and publishes both.
+- Replaced the scaffold’s deprecated GoReleaser settings after strict validation rejected them: `snapshot.version_template`, `archives.ids`, and modern `homebrew_casks` are used. The Cask provides both binaries on macOS; Linux receives archives and Debian/RPM packages.
+- Replaced copied legacy GitHub-secret release steps with OIDC/Vault split builds plus the reviewed shared infra-tooling publisher interface. Builders request only the GoReleaser license; final publication uses the Terraform-owned `homebrew-fury` profile and a short-lived Homebrew GitHub App token.
+- Installed Lefthook hooks with `lefthook install` and created `playbook/01-devmesh-release-contract-and-project-setup.md` as the authoritative non-secret operating/release contract.
+- Fixed newly enabled lint findings without altering the proxy/registry design: explicit cleanup-result handling in examples/tests, clearer port parameter names, a simplified non-default HTTP-port predicate, and a documented Docker v28 test-fixture compatibility suppression. Ticket scripts are excluded from the shipped lint target but remain compiled by `go test ./...`.
+
+### Why
+- A devctl feature cannot safely require a sibling Devmesh checkout or invoke `go run`. Stable CLI distribution is a necessary dependency for cross-repository use.
+- The standard release design prevents Linux/macOS build workers from receiving Homebrew, Fury, signing, or cross-repository publication credentials.
+- Strict GoReleaser validation matters: a syntactically accepted deprecated configuration would become a future release failure rather than a trustworthy project setup.
+
+### What worked
+
+```text
+make lint                                      PASS
+make test                                      PASS
+make test-race                                 PASS
+make logcopter-check                           PASS
+make build                                     PASS
+make build-bin                                 PASS
+goreleaser check --config .goreleaser.yaml     PASS
+goreleaser check --soft --config .goreleaser.yaml PASS
+snapshot GoReleaser release                    PASS
+```
+
+The snapshot build produced a Linux amd64 archive containing `devmesh` and `devmeshd`, plus Debian and RPM artifacts. Snapshot mode skipped announcement and publication as intended.
+
+### What did not work initially
+- `goreleaser check` rejected the first scaffold-derived configuration with exact diagnostics for deprecated `snapshot.name_template`, `archives.builds`, and `brews`. Updated them to `snapshot.version_template`, `archives.ids`, and `homebrew_casks`; strict and soft checks then passed.
+- The first newly enabled `make lint` exposed 28 existing findings, chiefly intentionally ignored cleanup returns in tests and ticket evidence scripts. Production/example and tracked test code were made explicit; the Makefile’s `LINT_PACKAGES` intentionally excludes ticket-local scripts while `go test ./...` continues to compile them. The final lint result had zero issues.
+
+### What I learned
+- Devmesh must be represented as a two-binary distribution at every release layer, not merely by building a CLI archive and hoping the daemon is separately available.
+- GoReleaser v2’s Cask migration removes the old cross-platform formula behavior. The project must describe Cask availability accurately rather than imply that `brew install` works unchanged on Linux.
+- A repository workflow alone cannot create authorization: the concrete Vault builder/publisher roles must be added and applied through the Terraform repository before the first tag.
+
+### What warrants a second pair of eyes
+- The release workflow source is ready, but the Terraform role addition and its normal remote-state plan/apply remain a separate infrastructure boundary. Do not push `v0.1.0` until it is reviewed and applied.
+- GoReleaser locally reported version `v2.13.3` while noting `v2.18.2` is newer. The selected syntax is strict-clean under the installed tool; CI uses `~> v2` and should be checked before the controlled first tag.
+
+### What should be done in the future
+- Add Devmesh to the Terraform `release_publishers` allowlist, run the normal reviewed plan/apply, then make a controlled first `v0.1.0` release and record the GitHub run and tap/package evidence.
+- Only after a normal installation route exists should a concrete non-self-registering devctl application justify the proposed native wrapper/backend-file feature.
+- Update `go-go-golems/go-go-template` from this corrected strict GoReleaser baseline after the Devmesh setup commit is established, as requested; retain template placeholders and do not overwrite other template work.
+
+### Code review instructions
+- Start with `README.md`, `AGENT.md`, and `playbook/01-devmesh-release-contract-and-project-setup.md`.
+- Then review `Makefile`, `.golangci.yml`, `lefthook.yml`, `.github/workflows/release.yaml`, and `.goreleaser.yaml` as a single release contract.
+- Verify `go.mod` and `rg 'github.com/wesen/devmesh'` contain no obsolete module references outside preserved historical material.
+- Run the validation block above. Do not create a release tag until Terraform authorization exists.
+
+### Technical details
+- Task: `4lvq`.
+- New ticket playbook: `playbook/01-devmesh-release-contract-and-project-setup.md`.
+- Upstream: `go-go-golems/devmesh`, numeric repository ID `1378931603`.
+- Required future roles: `release-devmesh-builder` and `release-devmesh-publisher`.

@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/wesen/devmesh/internal/api"
-	devmesh "github.com/wesen/devmesh/pkg/devmesh"
+	"github.com/go-go-golems/devmesh/internal/api"
+	devmesh "github.com/go-go-golems/devmesh/pkg/devmesh"
 )
 
 // TestGoClientRegistersAndHeartbeats verifies the public Go client binds a
@@ -19,7 +19,7 @@ func TestGoClientRegistersAndHeartbeats(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer ln.Close()
+	defer func() { _ = ln.Close() }()
 	go func() {
 		for {
 			c, err := ln.Accept()
@@ -27,7 +27,7 @@ func TestGoClientRegistersAndHeartbeats(t *testing.T) {
 				return
 			}
 			go func(c net.Conn) {
-				defer c.Close()
+				defer func() { _ = c.Close() }()
 				buf := make([]byte, 1024)
 				n, _ := c.Read(buf)
 				_, _ = c.Write(append([]byte("C:"), buf[:n]...))

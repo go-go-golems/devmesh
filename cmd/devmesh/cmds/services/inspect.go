@@ -3,14 +3,14 @@ package services
 import (
 	"context"
 
+	"github.com/go-go-golems/devmesh/cmd/devmesh/cmds/daemonconn"
+	"github.com/go-go-golems/devmesh/internal/api"
 	"github.com/go-go-golems/glazed/pkg/cmds"
 	"github.com/go-go-golems/glazed/pkg/cmds/fields"
 	"github.com/go-go-golems/glazed/pkg/cmds/schema"
 	"github.com/go-go-golems/glazed/pkg/cmds/values"
 	"github.com/go-go-golems/glazed/pkg/middlewares"
 	"github.com/go-go-golems/glazed/pkg/types"
-	"github.com/wesen/devmesh/cmd/devmesh/cmds/daemonconn"
-	"github.com/wesen/devmesh/internal/api"
 )
 
 // InspectSettings are the `services inspect` arguments.

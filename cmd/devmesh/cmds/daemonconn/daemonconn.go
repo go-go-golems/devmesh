@@ -5,9 +5,9 @@ package daemonconn
 import (
 	"time"
 
+	"github.com/go-go-golems/devmesh/internal/transport"
 	"github.com/go-go-golems/glazed/pkg/cmds/fields"
 	"github.com/go-go-golems/glazed/pkg/cmds/schema"
-	"github.com/wesen/devmesh/internal/transport"
 )
 
 // Slug is the Glazed section slug for daemon connection settings.

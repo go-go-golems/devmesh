@@ -21,6 +21,22 @@ The CLI and help system are built with
 output (`--format table|json|jsonl|csv|tsv|yaml`, `--output-fields`,
 `--max-output-rows`) and help pages are embedded markdown.
 
+## Install
+
+Published releases provide both the `devmesh` client and the `devmeshd` daemon.
+
+```bash
+brew tap go-go-golems/go-go-go
+brew install --cask devmesh
+```
+
+Or install the current Go module directly:
+
+```bash
+go install github.com/go-go-golems/devmesh/cmd/devmesh@latest
+go install github.com/go-go-golems/devmesh/cmd/devmeshd@latest
+```
+
 ## Quick start
 
 ```bash
@@ -66,10 +82,12 @@ second Docker registration path is required.
 ## Development
 
 ```bash
-make test          # go test ./...
-make test-race     # go test -race ./...
-make lint          # vet + glazed-lint
-make build
+make test            # unit and integration tests
+make test-race       # race-enabled unit and integration tests
+make lint            # pinned golangci-lint + glazed-lint
+make logcopter-check # generated logging metadata is current
+make build           # all packages
+make build-bin       # dist/devmesh and dist/devmeshd
 ```
 
 ## Design
@@ -85,3 +103,17 @@ and the source specification `devmesh-implementation-guide.md`.
 3. Stable identity: names survive backend churn and daemon restarts.
 4. Docker is an adapter, not the core.
 5. Generic TCP is host+port; only HTTP can be multiplexed by hostname.
+
+## Releases
+
+Version tags matching `v*` use GoReleaser to build static Linux and macOS
+archives containing both binaries. The release workflow has split build jobs
+with a build-only Vault role and a final shared publication job. The latter
+uses the caller repository `GITHUB_TOKEN` for its GitHub release and a
+short-lived GitHub App token for the Homebrew tap; no long-lived tap token is
+stored in this repository.
+
+The initial release requires the reviewed Terraform application of the
+`release-devmesh-builder` and `release-devmesh-publisher` Vault roles before a
+tag is pushed. See the DEVMESH-001 release-contract note for the non-secret
+credential inventory and validation sequence.

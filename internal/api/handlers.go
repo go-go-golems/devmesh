@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/wesen/devmesh/internal/daemon"
-	"github.com/wesen/devmesh/internal/registry"
+	"github.com/go-go-golems/devmesh/internal/daemon"
+	"github.com/go-go-golems/devmesh/internal/registry"
 )
 
 func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {

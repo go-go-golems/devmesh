@@ -1,8 +1,8 @@
 package api
 
 import (
-	"github.com/wesen/devmesh/internal/daemon"
-	"github.com/wesen/devmesh/internal/registry"
+	"github.com/go-go-golems/devmesh/internal/daemon"
+	"github.com/go-go-golems/devmesh/internal/registry"
 )
 
 // BackendDTO is the wire backend representation.

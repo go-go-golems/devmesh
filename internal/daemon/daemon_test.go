@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/wesen/devmesh/internal/config"
+	"github.com/go-go-golems/devmesh/internal/config"
 )
 
 func testConfig(t *testing.T) config.Config {
@@ -40,7 +40,7 @@ func TestHTTPListenerMustBindBeforeStartupSucceeds(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer ln.Close()
+	defer func() { _ = ln.Close() }()
 	cfg := testConfig(t)
 	cfg.HTTP.Enabled = true
 	cfg.HTTP.HTTPAddr = ln.Addr().String()
